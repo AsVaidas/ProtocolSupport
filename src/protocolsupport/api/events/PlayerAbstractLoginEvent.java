@@ -2,17 +2,18 @@ package protocolsupport.api.events;
 
 import protocolsupport.api.Connection;
 
-public abstract class PlayerAbstractLoginEvent extends PlayerEvent {
+public abstract class PlayerAbstractLoginEvent extends ConnectionEvent {
 
-	public PlayerAbstractLoginEvent(Connection connection, String username, boolean async) {
-		super(connection, username, async);
+	public PlayerAbstractLoginEvent(Connection connection, boolean async) {
+		super(connection, async);
 	}
 
-	public PlayerAbstractLoginEvent(Connection connection, String username) {
-		this(connection, username, true);
+	public PlayerAbstractLoginEvent(Connection connection) {
+		this(connection, true);
 	}
 
-	private String denyLoginMessage;
+
+	protected String denyLoginMessage;
 
 	/**
 	 * Returns true if login is denied

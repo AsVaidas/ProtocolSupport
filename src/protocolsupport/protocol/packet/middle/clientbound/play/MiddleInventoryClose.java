@@ -1,9 +1,14 @@
 package protocolsupport.protocol.packet.middle.clientbound.play;
 
 import io.netty.buffer.ByteBuf;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.ClientBoundMiddlePacket;
 
 public abstract class MiddleInventoryClose extends ClientBoundMiddlePacket {
+
+	public MiddleInventoryClose(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected int windowId;
 
@@ -14,7 +19,7 @@ public abstract class MiddleInventoryClose extends ClientBoundMiddlePacket {
 
 	@Override
 	public boolean postFromServerRead() {
-		cache.closeWindow();
+		cache.getWindowCache().closeWindow();
 		return true;
 	}
 

@@ -1,5 +1,6 @@
 package protocolsupport.protocol.packet.middle.serverbound.play;
 
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.ServerBoundPacket;
 import protocolsupport.protocol.packet.middle.ServerBoundMiddlePacket;
 import protocolsupport.protocol.packet.middleimpl.ServerBoundPacketData;
@@ -12,17 +13,25 @@ import protocolsupport.utils.recyclable.RecyclableSingletonList;
 
 public abstract class MiddleBlockDig extends ServerBoundMiddlePacket {
 
+	public MiddleBlockDig(ConnectionImpl connection) {
+		super(connection);
+	}
+
 	protected Action status;
-	protected Position position = new Position(0, 0, 0);
+	protected final Position position = new Position(0, 0, 0);
 	protected int face;
 
 	@Override
 	public RecyclableCollection<ServerBoundPacketData> toNative() {
+		return RecyclableSingletonList.create(create(status, position, face));
+	}
+
+	public static ServerBoundPacketData create(Action status, Position position, int face) {
 		ServerBoundPacketData creator = ServerBoundPacketData.create(ServerBoundPacket.PLAY_BLOCK_DIG);
 		MiscSerializer.writeVarIntEnum(creator, status);
 		PositionSerializer.writePosition(creator, position);
 		creator.writeByte(face);
-		return RecyclableSingletonList.create(creator);
+		return creator;
 	}
 
 	protected static enum Action {

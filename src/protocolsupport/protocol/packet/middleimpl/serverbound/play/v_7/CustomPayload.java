@@ -1,53 +1,62 @@
 package protocolsupport.protocol.packet.middleimpl.serverbound.play.v_7;
 
-import org.bukkit.Material;
-
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.handler.codec.DecoderException;
-import protocolsupport.api.ProtocolVersion;
-import protocolsupport.protocol.packet.middle.serverbound.play.MiddleCustomPayload;
+import protocolsupport.protocol.ConnectionImpl;
+import protocolsupport.protocol.packet.middle.ServerBoundMiddlePacket;
+import protocolsupport.protocol.packet.middleimpl.ServerBoundPacketData;
 import protocolsupport.protocol.serializer.ArraySerializer;
-import protocolsupport.protocol.serializer.ItemStackSerializer;
-import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.StringSerializer;
-import protocolsupport.protocol.utils.ProtocolVersionsHelper;
-import protocolsupport.zplatform.itemstack.ItemStackWrapper;
+import protocolsupport.protocol.typeremapper.legacy.LegacyCustomPayloadChannelName;
+import protocolsupport.protocol.typeremapper.legacy.LegacyCustomPayloadData;
+import protocolsupport.utils.recyclable.RecyclableCollection;
 
-//TODO: Create types for cmd control data and use them to share more code
-public class CustomPayload extends MiddleCustomPayload {
+public class CustomPayload extends ServerBoundMiddlePacket {
 
-	private final ByteBuf newdata = Unpooled.buffer();
+	public CustomPayload(ConnectionImpl connection) {
+		super(connection);
+	}
+
+	protected String tag;
+	protected ByteBuf data;
 
 	@Override
 	public void readFromClientData(ByteBuf clientdata) {
-		ProtocolVersion version = connection.getVersion();
 		tag = StringSerializer.readString(clientdata, version, 20);
-		if (clientdata.readableBytes() > Short.MAX_VALUE) {
-			throw new DecoderException("Payload may not be larger than 32767 bytes");
-		}
-		newdata.clear();
-		ByteBuf olddata = Unpooled.wrappedBuffer(ArraySerializer.readByteArray(clientdata, version));
-		if (tag.equals("MC|ItemName")) {
-			ArraySerializer.writeByteArray(newdata, ProtocolVersionsHelper.LATEST_PC, olddata);
-		} else if (tag.equals("MC|BSign") || tag.equals("MC|BEdit")) {
-			ItemStackWrapper book = ItemStackSerializer.readItemStack(olddata, version, cache.getLocale(), true);
-			if (!book.isNull()) {
-				book.setType(Material.BOOK_AND_QUILL);
+		data = ArraySerializer.readShortByteArraySlice(clientdata, Short.MAX_VALUE);
+	}
+
+	@Override
+	public RecyclableCollection<ServerBoundPacketData> toNative() {
+		switch (tag) {
+			case LegacyCustomPayloadChannelName.LEGACY_REGISTER: {
+				return LegacyCustomPayloadData.transformRegisterUnregister(cache.getChannelsCache(), tag, data, true);
 			}
-			ItemStackSerializer.writeItemStack(newdata, ProtocolVersionsHelper.LATEST_PC, cache.getLocale(), book, false);
-		} else if (tag.equals("MC|AdvCdm")) {
-			tag = "MC|AdvCmd";
-			newdata.writeByte(olddata.readByte());
-			newdata.writeInt(olddata.readInt());
-			newdata.writeInt(olddata.readInt());
-			newdata.writeInt(olddata.readInt());
-			StringSerializer.writeString(newdata, ProtocolVersionsHelper.LATEST_PC, StringSerializer.readString(olddata, version));
-			newdata.writeBoolean(true);
-		} else {
-			newdata.writeBytes(olddata);
+			case LegacyCustomPayloadChannelName.LEGACY_UNREGISTER: {
+				return LegacyCustomPayloadData.transformRegisterUnregister(cache.getChannelsCache(), tag, data, false);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_BOOK_EDIT: {
+				return LegacyCustomPayloadData.transformBookEdit(version, cache.getAttributesCache().getLocale(), data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_BOOK_SIGN: {
+				return LegacyCustomPayloadData.transformBookSign(version, cache.getAttributesCache().getLocale(), data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_SET_BEACON: {
+				return LegacyCustomPayloadData.transformSetBeaconEffect(data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_NAME_ITEM: {
+				return LegacyCustomPayloadData.transformNameItemDString(data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_TRADE_SELECT: {
+				return LegacyCustomPayloadData.transformTradeSelect(data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_COMMAND_RIGHT_NAME:
+			case LegacyCustomPayloadChannelName.LEGACY_COMMAND_TYPO_NAME: {
+				return LegacyCustomPayloadData.transformAdvancedCommandBlockEdit(version, data, false);
+			}
+			default: {
+				return LegacyCustomPayloadData.transformCustomPayload(tag, data);
+			}
 		}
-		data = MiscSerializer.readAllBytes(newdata);
 	}
 
 }

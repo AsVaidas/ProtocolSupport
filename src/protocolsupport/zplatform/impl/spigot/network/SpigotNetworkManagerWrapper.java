@@ -2,6 +2,8 @@ package protocolsupport.zplatform.impl.spigot.network;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -12,13 +14,13 @@ import com.mojang.authlib.properties.Property;
 import io.netty.channel.Channel;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
-import net.minecraft.server.v1_12_R1.ChatComponentText;
-import net.minecraft.server.v1_12_R1.NetworkManager;
-import net.minecraft.server.v1_12_R1.Packet;
-import net.minecraft.server.v1_12_R1.PacketListener;
-import net.minecraft.server.v1_12_R1.PlayerConnection;
-import protocolsupport.api.events.PlayerPropertiesResolveEvent.ProfileProperty;
+import net.minecraft.server.v1_13_R2.ChatComponentText;
+import net.minecraft.server.v1_13_R2.NetworkManager;
+import net.minecraft.server.v1_13_R2.Packet;
+import net.minecraft.server.v1_13_R2.PacketListener;
+import net.minecraft.server.v1_13_R2.PlayerConnection;
 import protocolsupport.api.utils.NetworkState;
+import protocolsupport.api.utils.ProfileProperty;
 import protocolsupport.zplatform.impl.spigot.SpigotMiscUtils;
 import protocolsupport.zplatform.network.NetworkManagerWrapper;
 
@@ -46,7 +48,7 @@ public class SpigotNetworkManagerWrapper extends NetworkManagerWrapper {
 
 	@Override
 	public void setAddress(InetSocketAddress address) {
-		internal.l = address;
+		internal.socketAddress = address;
 	}
 
 	@Override
@@ -70,8 +72,8 @@ public class SpigotNetworkManagerWrapper extends NetworkManagerWrapper {
 	}
 
 	@Override
-	public void sendPacket(Object packet, GenericFutureListener<? extends Future<? super Void>> genericListener, @SuppressWarnings("unchecked") GenericFutureListener<? extends Future<? super Void>>... futureListeners) {
-		internal.sendPacket((Packet<?>) packet, genericListener, futureListeners);
+	public void sendPacket(Object packet, GenericFutureListener<? extends Future<? super Void>> genericListener) {
+		internal.sendPacket((Packet<?>) packet, genericListener);
 	}
 
 	@Override
@@ -100,23 +102,21 @@ public class SpigotNetworkManagerWrapper extends NetworkManagerWrapper {
 	}
 
 	@Override
-	public ProfileProperty[] getSpoofedProperties() {
+	public Collection<ProfileProperty> getSpoofedProperties() {
 		if (internal.spoofedProfile == null) {
-			return null;
+			return Collections.emptyList();
 		}
 		return
-			Arrays.asList(internal.spoofedProfile)
-			.stream()
+			Arrays.asList(internal.spoofedProfile).stream()
 			.map(prop -> new ProfileProperty(prop.getName(), prop.getValue(), prop.getSignature()))
-			.collect(Collectors.toList())
-			.toArray(new ProfileProperty[0]);
+			.collect(Collectors.toList());
 	}
 
 	@Override
-	public void setSpoofedProfile(UUID uuid, ProfileProperty[] properties) {
+	public void setSpoofedProfile(UUID uuid, Collection<ProfileProperty> properties) {
 		internal.spoofedUUID = uuid;
 		if (properties != null) {
-			internal.spoofedProfile = Arrays.stream(properties)
+			internal.spoofedProfile = properties.stream()
 			.map(prop -> new Property(prop.getName(), prop.getValue(), prop.getSignature()))
 			.collect(Collectors.toList())
 			.toArray(new Property[0]);

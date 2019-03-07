@@ -8,7 +8,6 @@ import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
 
@@ -16,11 +15,11 @@ import protocolsupport.api.chat.components.BaseComponent;
 import protocolsupport.api.chat.modifiers.ClickAction;
 import protocolsupport.api.chat.modifiers.HoverAction;
 import protocolsupport.api.chat.modifiers.Modifier;
+import protocolsupport.protocol.utils.chat.ClickActionSerializer;
+import protocolsupport.protocol.utils.chat.ComponentSerializer;
+import protocolsupport.protocol.utils.chat.HoverActionSerializer;
+import protocolsupport.protocol.utils.chat.ModifierSerializer;
 import protocolsupport.utils.JsonUtils;
-import protocolsupport.utils.chat.ClickActionSerializer;
-import protocolsupport.utils.chat.ComponentSerializer;
-import protocolsupport.utils.chat.HoverActionSerializer;
-import protocolsupport.utils.chat.ModifierSerializer;
 
 public class PingResponse {
 
@@ -92,7 +91,7 @@ public class PingResponse {
 	public static class Serializer implements JsonDeserializer<PingResponse>, JsonSerializer<PingResponse> {
 
 		@Override
-		public PingResponse deserialize(JsonElement jsonElement, Type type, JsonDeserializationContext ctx) throws JsonParseException {
+		public PingResponse deserialize(JsonElement jsonElement, Type type, JsonDeserializationContext ctx) {
 			JsonObject jsonObject = JsonUtils.getAsJsonObject(jsonElement, "status");
 			PingResponse ping = new PingResponse();
 			if (jsonObject.has("version")) {
