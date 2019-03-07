@@ -3,7 +3,6 @@ package protocolsupport.api.unsafe.peskins;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.util.UUID;
 import java.util.function.Consumer;
 
 import org.apache.commons.lang3.Validate;
@@ -25,22 +24,21 @@ public abstract class PESkinsProvider {
 	 * This method should schedule calling the skindataApplyCallback even if for whatever reason it can run it right now
 	 * This method can actually skip calling the skindataApplyCallback if it can't get the skin data for whatever reason
 	 * @param url url to skin image
-	 * @param uuid uuid of the player.
 	 * @param skindataApplyCallback callback that should be called when receiving skin data completes
 	 */
-	public abstract void scheduleGetSkinData(String url, UUID uuid, Consumer<byte[]> skindataApplyCallback);
+	public abstract void scheduleGetSkinData(String url, Consumer<byte[]> skindataApplyCallback);
 
 	protected static byte[] toData(BufferedImage skin) {
 		Validate.isTrue(skin.getWidth() == 64, "Must be 64 pixels wide");
-		Validate.isTrue((skin.getHeight() == 64) || (skin.getHeight() == 32), "Must be 64 or 32 pixels high");
+		Validate.isTrue((skin.getHeight() == 128) || (skin.getHeight() == 64) || (skin.getHeight() == 32), "Must be 128, 64 or 32 pixels high");
 		ByteArrayOutputStream stream = new ByteArrayOutputStream();
 		for (int y = 0; y < skin.getHeight(); y++) {
 			for (int x = 0; x < skin.getWidth(); x++) {
-                Color color = new Color(skin.getRGB(x, y), true);
-                stream.write(color.getRed());
-                stream.write(color.getGreen());
-                stream.write(color.getBlue());
-                stream.write(color.getAlpha());
+				Color color = new Color(skin.getRGB(x, y), true);
+				stream.write(color.getRed());
+				stream.write(color.getGreen());
+				stream.write(color.getBlue());
+				stream.write(color.getAlpha());
 			}
 		}
 		return stream.toByteArray();

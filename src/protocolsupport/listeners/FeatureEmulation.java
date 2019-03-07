@@ -9,10 +9,11 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
+import org.bukkit.event.entity.EntityPotionEffectEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
+import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
-import org.bukkit.util.Vector;
 
 import protocolsupport.ProtocolSupport;
 import protocolsupport.api.Connection;
@@ -27,20 +28,40 @@ import protocolsupport.zplatform.ServerPlatform;
 public class FeatureEmulation implements Listener {
 
 	public FeatureEmulation() {
-		Bukkit.getScheduler().runTaskTimer(ProtocolSupport.getInstance(), () -> {
-			Bukkit.getOnlinePlayers().stream()
-			.filter(player -> {
-				ProtocolVersion version = ProtocolSupportAPI.getProtocolVersion(player);
-				return (version.getProtocolType() == ProtocolType.PC) && version.isBefore(ProtocolVersion.MINECRAFT_1_9);
-			})
-			.filter(player -> player.hasPotionEffect(PotionEffectType.LEVITATION))
-			.filter(player -> !player.isFlying())
-			.forEach(player -> {
-				Vector vel = player.getVelocity();
-				vel.setY(vel.getY() + (((0.05D * (player.getPotionEffect(PotionEffectType.LEVITATION).getAmplifier() + 1)) - vel.getY()) * 0.2D));
-				player.setVelocity(vel);
-			});
-		}, 1, 1);
+		Bukkit.getScheduler().runTaskTimer(
+			ProtocolSupport.getInstance(),
+			() ->
+				Bukkit.getOnlinePlayers().stream()
+				.filter(player -> {
+					ProtocolVersion version = ProtocolSupportAPI.getProtocolVersion(player);
+					return version.isPC() && version.isBefore(ProtocolVersion.MINECRAFT_1_9);
+				})
+				.filter(player ->
+					!player.isFlying() &&
+					(player.hasPotionEffect(PotionEffectType.LEVITATION) || player.hasPotionEffect(PotionEffectType.SLOW_FALLING))
+				)
+				.forEach(player -> player.setVelocity(player.getVelocity())),
+			1, 1
+		);
+	}
+
+	@EventHandler
+	public void onPotionEffectAdd(EntityPotionEffectEvent event) {
+		if (!(event.getEntity() instanceof Player)) {
+			return;
+		}
+		Player player = (Player) event.getEntity();
+		PotionEffect effect = event.getNewEffect();
+		if (effect != null) {
+			int amplifierByte = (byte) effect.getAmplifier();
+			if (effect.getAmplifier() != amplifierByte) {
+				event.setCancelled(true);
+				player.addPotionEffect(new PotionEffect(
+					effect.getType(), effect.getDuration(), amplifierByte,
+					effect.isAmbient(), effect.hasParticles(), effect.hasIcon()
+				), true);
+			}
+		}
 	}
 
 	@EventHandler
@@ -90,14 +111,11 @@ public class FeatureEmulation implements Listener {
 
 	@EventHandler
 	public void onJoin(final PlayerJoinEvent event) {
-		Bukkit.getScheduler().runTaskLater(ProtocolSupport.getInstance(), new Runnable() {
-			@Override
-			public void run() {
-				BaseComponent header = TabAPI.getDefaultHeader();
-				BaseComponent footer = TabAPI.getDefaultFooter();
-				if ((header != null) || (footer != null)) {
-					TabAPI.sendHeaderFooter(event.getPlayer(), header, footer);
-				}
+		Bukkit.getScheduler().runTaskLater(ProtocolSupport.getInstance(), () -> {
+			BaseComponent header = TabAPI.getDefaultHeader();
+			BaseComponent footer = TabAPI.getDefaultFooter();
+			if ((header != null) || (footer != null)) {
+				TabAPI.sendHeaderFooter(event.getPlayer(), header, footer);
 			}
 		}, 1);
 	}

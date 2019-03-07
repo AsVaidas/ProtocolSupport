@@ -1,13 +1,12 @@
 package protocolsupport.api.unsafe.peskins;
 
 import java.io.IOException;
-import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 
 import javax.imageio.ImageIO;
 
-import protocolsupport.utils.Utils;
+import protocolsupport.utils.ResourceUtils;
 
 public class DefaultPESkinsProvider extends PESkinsProvider {
 
@@ -17,7 +16,7 @@ public class DefaultPESkinsProvider extends PESkinsProvider {
 		@Override
 		public byte[] call() {
 			try {
-				return toData(ImageIO.read(Utils.getResourceAsStream("pe/steve_skin.png")));
+				return toData(ImageIO.read(ResourceUtils.getAsStream("pe/steve_skin.png")));
 			} catch (IOException e) {
 				return new byte[0];
 			}
@@ -30,7 +29,7 @@ public class DefaultPESkinsProvider extends PESkinsProvider {
 	}
 
 	@Override
-	public void scheduleGetSkinData(String url, UUID uuid, Consumer<byte[]> skindataApplyCallback) {
+	public void scheduleGetSkinData(String url, Consumer<byte[]> skindataApplyCallback) {
 	}
 
 }

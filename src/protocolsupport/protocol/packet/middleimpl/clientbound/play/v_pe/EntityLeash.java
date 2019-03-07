@@ -1,22 +1,29 @@
 package protocolsupport.protocol.packet.middleimpl.clientbound.play.v_pe;
 
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.clientbound.play.MiddleEntityLeash;
 import protocolsupport.protocol.packet.middleimpl.ClientBoundPacketData;
-import protocolsupport.protocol.utils.types.NetworkEntity;
+import protocolsupport.protocol.utils.networkentity.NetworkEntity;
 import protocolsupport.utils.recyclable.RecyclableArrayList;
 import protocolsupport.utils.recyclable.RecyclableCollection;
+import protocolsupport.utils.recyclable.RecyclableEmptyList;
 
 public class EntityLeash extends MiddleEntityLeash {
 
+	public EntityLeash(ConnectionImpl connection) {
+		super(connection);
+	}
+
 	@Override
 	public RecyclableCollection<ClientBoundPacketData> toData() {
+		NetworkEntity wentity = cache.getWatchedEntityCache().getWatchedEntity(entityId);
+		if (wentity == null) {
+			return RecyclableEmptyList.get();
+		}
 		RecyclableArrayList<ClientBoundPacketData> packets = RecyclableArrayList.create();
-		NetworkEntity e = cache.getWatchedEntity(entityId);
-		if(e != null) {
-			packets.add(EntityMetadata.createFaux(e, cache.getLocale(), connection.getVersion()));
-			if(vehicleId == -1) {
-				packets.add(EntityStatus.create(e, EntityStatus.PE_UNLEASH, connection.getVersion()));
-			}
+		packets.add(EntityMetadata.createFaux(wentity, cache.getAttributesCache().getLocale(), connection.getVersion()));
+		if (vehicleId == -1) {
+			packets.add(EntityStatus.create(wentity.getId(), EntityStatus.UNLEASH));
 		}
 		return packets;
 	}

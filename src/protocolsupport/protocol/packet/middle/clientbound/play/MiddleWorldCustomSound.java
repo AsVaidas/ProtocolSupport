@@ -1,12 +1,16 @@
 package protocolsupport.protocol.packet.middle.clientbound.play;
 
 import io.netty.buffer.ByteBuf;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.ClientBoundMiddlePacket;
 import protocolsupport.protocol.serializer.StringSerializer;
 import protocolsupport.protocol.serializer.VarNumberSerializer;
-import protocolsupport.protocol.utils.ProtocolVersionsHelper;
 
 public abstract class MiddleWorldCustomSound extends ClientBoundMiddlePacket {
+
+	public MiddleWorldCustomSound(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected String id;
 	protected int category;
@@ -18,7 +22,7 @@ public abstract class MiddleWorldCustomSound extends ClientBoundMiddlePacket {
 
 	@Override
 	public void readFromServerData(ByteBuf serverdata) {
-		id = StringSerializer.readString(serverdata, ProtocolVersionsHelper.LATEST_PC);
+		id = StringSerializer.readVarIntUTF8String(serverdata);
 		category = VarNumberSerializer.readVarInt(serverdata);
 		x = serverdata.readInt();
 		y = serverdata.readInt();

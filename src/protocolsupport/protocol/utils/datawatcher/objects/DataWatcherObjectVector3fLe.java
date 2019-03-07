@@ -3,12 +3,10 @@ package protocolsupport.protocol.utils.datawatcher.objects;
 import org.bukkit.util.Vector;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.handler.codec.DecoderException;
 import protocolsupport.api.ProtocolVersion;
-import protocolsupport.protocol.serializer.MiscSerializer;
-import protocolsupport.protocol.utils.datawatcher.ReadableDataWatcherObject;
+import protocolsupport.protocol.utils.datawatcher.DataWatcherObject;
 
-public class DataWatcherObjectVector3fLe extends ReadableDataWatcherObject<Vector> {
+public class DataWatcherObjectVector3fLe extends DataWatcherObject<Vector> {
 
 	public DataWatcherObjectVector3fLe() {
 		value = new Vector(0, 0, 0);
@@ -19,17 +17,10 @@ public class DataWatcherObjectVector3fLe extends ReadableDataWatcherObject<Vecto
 	}
 
 	@Override
-	public void readFromStream(ByteBuf from, ProtocolVersion version, String locale) throws DecoderException {
-		value.setX(MiscSerializer.readLFloat(from));
-		value.setY(MiscSerializer.readLFloat(from));
-		value.setZ(MiscSerializer.readLFloat(from));
-	}
-
-	@Override
 	public void writeToStream(ByteBuf to, ProtocolVersion version, String locale) {
-		MiscSerializer.writeLFloat(to, (float) value.getX());
-		MiscSerializer.writeLFloat(to, (float) value.getY());
-		MiscSerializer.writeLFloat(to, (float) value.getZ());
+		to.writeFloatLE((float) value.getX());
+		to.writeFloatLE((float) value.getY());
+		to.writeFloatLE((float) value.getZ());
 	}
 
 }

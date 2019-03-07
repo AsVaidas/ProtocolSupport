@@ -8,29 +8,38 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import io.netty.buffer.ByteBuf;
+import org.bukkit.Chunk;
 import org.bukkit.Material;
-import org.bukkit.craftbukkit.v1_12_R1.entity.CraftEntity;
+import org.bukkit.craftbukkit.v1_13_R2.CraftChunk;
+import org.bukkit.craftbukkit.v1_13_R2.entity.CraftEntity;
 import org.spigotmc.SpigotConfig;
 
 import com.google.common.collect.BiMap;
 
 import io.netty.buffer.Unpooled;
-import net.minecraft.server.v1_12_R1.*;
-import net.minecraft.server.v1_12_R1.IChatBaseComponent.ChatSerializer;
-import net.minecraft.server.v1_12_R1.PacketPlayInFlying.PacketPlayInLook;
-import net.minecraft.server.v1_12_R1.PacketPlayInFlying.PacketPlayInPosition;
-import net.minecraft.server.v1_12_R1.PacketPlayInFlying.PacketPlayInPositionLook;
-import net.minecraft.server.v1_12_R1.PacketPlayOutEntity.PacketPlayOutEntityLook;
-import net.minecraft.server.v1_12_R1.PacketPlayOutEntity.PacketPlayOutRelEntityMove;
-import net.minecraft.server.v1_12_R1.PacketPlayOutEntity.PacketPlayOutRelEntityMoveLook;
-import net.minecraft.server.v1_12_R1.PacketPlayOutTitle.EnumTitleAction;
-import net.minecraft.server.v1_12_R1.ServerPing.ServerData;
-import net.minecraft.server.v1_12_R1.ServerPing.ServerPingPlayerSample;
+import net.minecraft.server.v1_13_R2.*;
+import net.minecraft.server.v1_13_R2.IChatBaseComponent.ChatSerializer;
+import net.minecraft.server.v1_13_R2.PacketPlayInFlying.PacketPlayInLook;
+import net.minecraft.server.v1_13_R2.PacketPlayInFlying.PacketPlayInPosition;
+import net.minecraft.server.v1_13_R2.PacketPlayInFlying.PacketPlayInPositionLook;
+import net.minecraft.server.v1_13_R2.PacketPlayOutEntity.PacketPlayOutEntityLook;
+import net.minecraft.server.v1_13_R2.PacketPlayOutEntity.PacketPlayOutRelEntityMove;
+import net.minecraft.server.v1_13_R2.PacketPlayOutEntity.PacketPlayOutRelEntityMoveLook;
+import net.minecraft.server.v1_13_R2.PacketPlayOutTitle.EnumTitleAction;
+import net.minecraft.server.v1_13_R2.ServerPing.ServerData;
+import net.minecraft.server.v1_13_R2.ServerPing.ServerPingPlayerSample;
 import protocolsupport.api.chat.ChatAPI;
 import protocolsupport.api.chat.components.BaseComponent;
 import protocolsupport.api.chat.components.TextComponent;
 import protocolsupport.api.events.ServerPingResponseEvent.ProtocolInfo;
+import protocolsupport.protocol.serializer.PositionSerializer;
+import protocolsupport.protocol.serializer.StringSerializer;
+import protocolsupport.protocol.serializer.VarNumberSerializer;
+import protocolsupport.protocol.utils.ProtocolVersionsHelper;
 import protocolsupport.protocol.utils.authlib.GameProfile;
+import protocolsupport.protocol.utils.minecraftdata.BlockData;
+import protocolsupport.protocol.utils.minecraftdata.BlockData.BlockDataEntry;
 import protocolsupport.protocol.utils.types.Position;
 import protocolsupport.utils.ReflectionUtils;
 import protocolsupport.zplatform.PlatformPacketFactory;
@@ -52,6 +61,51 @@ public class SpigotPacketFactory implements PlatformPacketFactory {
 	@Override
 	public Object createInboundInventoryClosePacket() {
 		return new PacketPlayInCloseWindow();
+	}
+
+	@Override
+	public Object createInboundInventoryConfirmTransactionPacket(int windowId, int actionNumber, boolean accepted) {
+		PacketDataSerializer serializer = new PacketDataSerializer(Unpooled.buffer());
+		serializer.writeByte(windowId);
+		serializer.writeShort(actionNumber);
+		serializer.writeByte(accepted ? 1 : 0);
+		PacketPlayInTransaction packet = new PacketPlayInTransaction();
+		try {
+			packet.a(serializer);
+		} catch (IOException e) {
+		}
+		return packet;
+	}
+
+	@Override
+	public Object createInboundPluginMessagePacket(String tag, byte[] data) {
+		PacketDataSerializer serializer = new PacketDataSerializer(Unpooled.buffer());
+		StringSerializer.writeString(serializer, ProtocolVersionsHelper.LATEST_PC, tag);
+		serializer.writeBytes(data);
+		PacketPlayInCustomPayload packet = new PacketPlayInCustomPayload();
+		try {
+			packet.a(serializer);
+		} catch (IOException e) {
+		}
+		return packet;
+	}
+
+	@Override
+	public Object createInboundCustomPayloadPacket(String tag, byte[] data) {
+		PacketDataSerializer serializer = new PacketDataSerializer(Unpooled.buffer());
+		StringSerializer.writeString(serializer, ProtocolVersionsHelper.LATEST_PC, tag);
+		serializer.writeBytes(data);
+		PacketPlayInCustomPayload packet = new PacketPlayInCustomPayload();
+		try {
+			packet.a(serializer);
+		} catch (IOException e) {
+		}
+		return packet;
+	}
+
+	@Override
+	public Object createOutboundUpdateChunkPacket(Chunk chunk) {
+		return new PacketPlayOutMapChunk(((CraftChunk) chunk).getHandle(), 0xFFFF);
 	}
 
 	@Override
@@ -120,14 +174,13 @@ public class SpigotPacketFactory implements PlatformPacketFactory {
 	}
 
 	@Override
-	@SuppressWarnings("deprecation")
 	public Object createBlockBreakSoundPacket(Position pos, Material type) {
-		SoundEffectType blocksound = Block.getById(type.getId()).getStepSound();
+		BlockDataEntry blockdataentry = BlockData.get(type);
 		return new PacketPlayOutNamedSoundEffect(
-			blocksound.e(), SoundCategory.BLOCKS,
+			IRegistry.SOUND_EVENT.fromId(blockdataentry.getBreakSound()), SoundCategory.BLOCKS,
 			pos.getX(), pos.getY(), pos.getZ(),
-			(blocksound.a() + 1.0F) / 2.0F,
-			blocksound.b() * 0.8F
+			(blockdataentry.getVolume() + 1.0F) / 2.0F,
+			blockdataentry.getPitch() * 0.8F
 		);
 	}
 
@@ -166,17 +219,40 @@ public class SpigotPacketFactory implements PlatformPacketFactory {
 	protected static final PacketDataSerializer emptyPDS = new PacketDataSerializer(Unpooled.EMPTY_BUFFER);
 	@Override
 	public Object createEmptyCustomPayloadPacket(String tag) {
-		return new PacketPlayOutCustomPayload(tag, emptyPDS);
+		return new PacketPlayOutCustomPayload(new MinecraftKey("ps", tag), emptyPDS);
+	}
+
+	@Override
+	public Object createOutboundPluginMessagePacket(String tag, ByteBuf data) {
+		return new PacketPlayOutCustomPayload(new MinecraftKey("ps", tag), new PacketDataSerializer(data));
 	}
 
 	@Override
 	public Object createFakeJoinGamePacket() {
-		return new PacketPlayOutLogin(0, EnumGamemode.NOT_SET, false, 0, EnumDifficulty.EASY, 60, WorldType.NORMAL, false);
+		return new PacketPlayOutLogin(0, EnumGamemode.SURVIVAL, false, DimensionManager.OVERWORLD, EnumDifficulty.EASY, 60, WorldType.NORMAL, false);
 	}
 
 	@Override
 	public Object createEntityStatusPacket(org.bukkit.entity.Entity entity, int status) {
 		return new PacketPlayOutEntityStatus(((CraftEntity) entity).getHandle(), (byte) status);
+	}
+
+	@Override
+	public Object createUpdateChunkPacket(Chunk chunk) {
+		return new PacketPlayOutMapChunk(((CraftChunk) chunk).getHandle(), 0xFFFF);
+	}
+
+	@Override
+	public Object createBlockUpdatePacket(Position pos, int block) {
+		PacketDataSerializer serializer = new PacketDataSerializer(Unpooled.buffer());
+		PositionSerializer.writePosition(serializer, pos);
+		VarNumberSerializer.writeVarInt(serializer, block);
+		PacketPlayOutBlockChange packet = new PacketPlayOutBlockChange();
+		try {
+			packet.a(serializer);
+		} catch (IOException e) {
+		}
+		return packet;
 	}
 
 
@@ -198,6 +274,11 @@ public class SpigotPacketFactory implements PlatformPacketFactory {
 	@Override
 	public int getOutLoginSetCompressionPacketId() {
 		return getOutId(PacketLoginOutSetCompression.class);
+	}
+
+	@Override
+	public int getOutLoginCustomPayloadPacketId() {
+		return getOutId(PacketLoginOutCustomPayload.class);
 	}
 
 	@Override
@@ -606,8 +687,38 @@ public class SpigotPacketFactory implements PlatformPacketFactory {
 	}
 
 	@Override
-	public int getOutPlayCraftingGridConfirmPacketId() {
+	public int getOutPlayCraftRecipeConfirmPacketId() {
 		return getOutId(PacketPlayOutAutoRecipe.class);
+	}
+
+	@Override
+	public int getOutPlayDeclareCommandsPacketId() {
+		return getOutId(PacketPlayOutCommands.class);
+	}
+
+	@Override
+	public int getOutPlayDeclareRecipesPacketId() {
+		return getOutId(PacketPlayOutRecipeUpdate.class);
+	}
+
+	@Override
+	public int getOutPlayDeclareTagsPacket() {
+		return getOutId(PacketPlayOutTags.class);
+	}
+
+	@Override
+	public int getOutPlayQueryNBTResponsePacketId() {
+		return getOutId(PacketPlayOutNBTQuery.class);
+	}
+
+	@Override
+	public int getOutPlayStopSoundPacketId() {
+		return getOutId(PacketPlayOutStopSound.class);
+	}
+
+	@Override
+	public int getOutPlayLookAtPacketId() {
+		return getOutId(PacketPlayOutLookAt.class);
 	}
 
 
@@ -634,6 +745,11 @@ public class SpigotPacketFactory implements PlatformPacketFactory {
 	@Override
 	public int getInLoginEncryptionBeginPacketId() {
 		return getInId(PacketLoginInEncryptionBegin.class);
+	}
+
+	@Override
+	public int getInLoginCustomPayloadPacketId() {
+		return getInId(PacketLoginInCustomPayload.class);
 	}
 
 	@Override
@@ -787,18 +903,68 @@ public class SpigotPacketFactory implements PlatformPacketFactory {
 	}
 
 	@Override
-	public int getInPlayCraftingBookPacketId() {
+	public int getInPlayRecipeBookDataPacketId() {
 		return getInId(PacketPlayInRecipeDisplayed.class);
 	}
 
 	@Override
-	public int getInPlayPrepareCraftingGridPacketId() {
+	public int getInPlayCraftRecipeRequestPacketId() {
 		return getInId(PacketPlayInAutoRecipe.class);
 	}
 
 	@Override
 	public int getInPlayAdvancementTabPacketId() {
 		return getInId(PacketPlayInAdvancements.class);
+	}
+
+	@Override
+	public int getInPlayQueryBlockNBTPacketId() {
+		return getInId(PacketPlayInTileNBTQuery.class);
+	}
+
+	@Override
+	public int getInPlayQueryEntityNBTPacketId() {
+		return getInId(PacketPlayInEntityNBTQuery.class);
+	}
+
+	@Override
+	public int getInPlayEditBookPacketId() {
+		return getInId(PacketPlayInBEdit.class);
+	}
+
+	@Override
+	public int getInPlayPickItemPacketId() {
+		return getInId(PacketPlayInPickItem.class);
+	}
+
+	@Override
+	public int getInPlayNameItemPacketId() {
+		return getInId(PacketPlayInItemName.class);
+	}
+
+	@Override
+	public int getInPlaySelectTradePacketId() {
+		return getInId(PacketPlayInTrSel.class);
+	}
+
+	@Override
+	public int getInPlaySetBeaconEffectPacketId() {
+		return getInId(PacketPlayInBeacon.class);
+	}
+
+	@Override
+	public int getInPlayUpdateCommandBlockPacketId() {
+		return getInId(PacketPlayInSetCommandBlock.class);
+	}
+
+	@Override
+	public int getInPlayUpdateCommandMinecartPacketId() {
+		return getInId(PacketPlayInSetCommandMinecart.class);
+	}
+
+	@Override
+	public int getInPlayUpdateStructureBlockPacketId() {
+		return getInId(PacketPlayInStruct.class);
 	}
 
 

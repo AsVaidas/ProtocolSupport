@@ -1,27 +1,30 @@
 package protocolsupport.zplatform.impl.spigot.injector;
 
 import org.bukkit.Bukkit;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import protocolsupport.ProtocolSupport;
 import protocolsupport.zplatform.PlatformInjector;
+import protocolsupport.zplatform.impl.spigot.entitytracker.SpigotEntityTracker;
+import protocolsupport.zplatform.impl.spigot.entitytracker.SpigotEntityTrackerEntry;
 import protocolsupport.zplatform.impl.spigot.injector.network.SpigotNettyInjector;
 
 public class SpigotPlatformInjector implements PlatformInjector {
 
 	@Override
-	public void inject() {
+	public void onLoad() {
 		try {
+			Class.forName(SpigotEntityTracker.class.getName());
+			Class.forName(SpigotEntityTrackerEntry.class.getName());
 			SpigotServerInjector.inject();
 			SpigotNettyInjector.inject();
-		} catch (IllegalArgumentException | IllegalAccessException | NoSuchFieldException | SecurityException e) {
+		} catch (IllegalArgumentException | IllegalAccessException | NoSuchFieldException | SecurityException | ClassNotFoundException e) {
 			throw new RuntimeException("Error while injecting", e);
 		}
 	}
 
 	@Override
 	public void onEnable() {
-		Bukkit.getPluginManager().registerEvents(new SpigotEntityTrackerInjector(), JavaPlugin.getPlugin(ProtocolSupport.class));
+		Bukkit.getPluginManager().registerEvents(new SpigotEntityTrackerInjector(), ProtocolSupport.getInstance());
 	}
 
 	@Override

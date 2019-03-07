@@ -2,10 +2,11 @@ package protocolsupport.protocol.typeremapper.pe;
 
 import java.util.Arrays;
 
-import protocolsupport.api.ProtocolVersion;
 import protocolsupport.protocol.packet.middleimpl.ClientBoundPacketData;
 import protocolsupport.protocol.serializer.VarNumberSerializer;
-import protocolsupport.protocol.storage.NetworkDataCache;
+import protocolsupport.protocol.storage.netcache.AttributesCache;
+import protocolsupport.protocol.storage.netcache.NetworkDataCache;
+import protocolsupport.protocol.utils.types.GameMode;
 
 public class PEAdventureSettings {
 
@@ -33,12 +34,12 @@ public class PEAdventureSettings {
 	public static final int GROUP_OP = 2;
 	public static final int GROUP_CUSTOM = 3;
 
-	public static int getGameModeFlags(int gamemode) {
+	public static int getGameModeFlags(GameMode gamemode) {
 		switch (gamemode) {
-			case 2: {
+			case ADVENTURE: {
 				return ADVENTURE_MODE_ENABLED;
 			}
-			case 3: {
+			case SPECTATOR: {
 				return PVP_DISABLED | PVE_DISABLED | ALLOW_FLIGHT | FLYING | NOCLIP_ENABLED;
 			}
 			default: {
@@ -48,24 +49,24 @@ public class PEAdventureSettings {
 	}
 
 	public static ClientBoundPacketData createPacket(int entityId, int... flags) {
-		ClientBoundPacketData serializer = ClientBoundPacketData.create(PEPacketIDs.ADVENTURE_SETTINGS, ProtocolVersion.MINECRAFT_PE);
+		ClientBoundPacketData serializer = ClientBoundPacketData.create(PEPacketIDs.ADVENTURE_SETTINGS);
 		VarNumberSerializer.writeVarInt(serializer, Arrays.stream(flags).reduce(0, (left, right) -> left | right));
 		VarNumberSerializer.writeVarInt(serializer, 0); //?
-		//TODO: Actually work with permissions?
 		VarNumberSerializer.writeVarInt(serializer, PERMISSIONS_ALLOW_ALL);
 		VarNumberSerializer.writeVarInt(serializer, GROUP_NORMAL);
 		VarNumberSerializer.writeVarInt(serializer, 0); //? (custom flags)
-		VarNumberSerializer.writeSVarLong(serializer, 0);
+		serializer.writeLongLE(entityId); //FFS mojang, be consistant.
 		return serializer;
 	}
 
 	public static ClientBoundPacketData createPacket(NetworkDataCache cache) {
+		AttributesCache attrscache = cache.getAttributesCache();
 		return PEAdventureSettings.createPacket(
-			cache.getSelfPlayerEntityId(),
-			PEAdventureSettings.getGameModeFlags(cache.getGameMode()),
+			cache.getWatchedEntityCache().getSelfPlayerEntityId(),
+			PEAdventureSettings.getGameModeFlags(attrscache.getPEGameMode()),
 			PEAdventureSettings.AUTOJUMP_ENABLED,
-			cache.canFly() ? PEAdventureSettings.ALLOW_FLIGHT : 0,
-			cache.isFlying() ? PEAdventureSettings.FLYING : 0
+			attrscache.canPEFly() ? PEAdventureSettings.ALLOW_FLIGHT : 0,
+			attrscache.isPEFlying() ? PEAdventureSettings.FLYING : 0
 		);
 	}
 

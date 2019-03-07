@@ -1,54 +1,78 @@
 package protocolsupport.protocol.typeremapper.chunk;
 
-import java.io.ByteArrayOutputStream;
-
-import protocolsupport.api.ProtocolVersion;
-import protocolsupport.protocol.typeremapper.id.IdRemapper;
-import protocolsupport.protocol.typeremapper.pe.PEDataValues;
+import io.netty.buffer.ByteBuf;
+import protocolsupport.protocol.serializer.ArraySerializer;
+import protocolsupport.protocol.serializer.VarNumberSerializer;
+import protocolsupport.protocol.storage.netcache.TileDataCache;
+import protocolsupport.protocol.typeremapper.tile.TileEntityRemapper;
+import protocolsupport.protocol.typeremapper.pe.PEBlocks;
 import protocolsupport.protocol.typeremapper.utils.RemappingTable.ArrayBasedIdRemappingTable;
-import protocolsupport.protocol.utils.minecraftdata.MinecraftData;
 
-public class ChunkTransformerPE extends ChunkTransformer {
+public class ChunkTransformerPE extends ChunkTransformerBB {
 
-	private static final byte[] emptySection = new byte[4096 + 2048];
-
-	private final byte[] blocks = new byte[4096];
-	private final byte[] blockdata = new byte[2048];
-
-	@Override
-	public byte[] toLegacyData(ProtocolVersion version) {
-		ArrayBasedIdRemappingTable table = IdRemapper.BLOCK.getTable(version);
-		ByteArrayOutputStream stream = new ByteArrayOutputStream(10241 * sections.length);
-		stream.write(sections.length);
-		for (int i = 0; i < sections.length; i++) {
-			ChunkSection section = sections[i];
-			stream.write(0); //type
-			if (section != null) {
-				for (int x = 0; x < 16; x++) {
-					for (int z = 0; z < 16; z++) {
-						int xzoffset = (x << 7) | (z << 3);
-						for (int y = 0; y < 16; y += 2) {
-							int stateL = PEDataValues.BLOCK_ID.getRemap(table.getRemap(getBlockState(section, x, y, z)));
-							int stateH = PEDataValues.BLOCK_ID.getRemap(table.getRemap(getBlockState(section, x, y + 1, z)));
-							blocks[((xzoffset << 1) | y)] = (byte) MinecraftData.getBlockIdFromState(stateL);
-							blocks[((xzoffset << 1) | (y + 1))] = (byte) MinecraftData.getBlockIdFromState(stateH);
-							blockdata[(xzoffset | (y >> 1))] = (byte) ((MinecraftData.getBlockDataFromState(stateH) << 4) | MinecraftData.getBlockDataFromState(stateL));
-						}
-					}
-				}
-				stream.write(blocks, 0, blocks.length);
-				stream.write(blockdata, 0, blockdata.length);
-			} else {
-				stream.write(emptySection, 0, emptySection.length);
-			}
-		}
-		stream.write(new byte[512], 0, 512); //heightmap
-		stream.write(biomeData, 0 , 256);
-		return stream.toByteArray();
+	public ChunkTransformerPE(ArrayBasedIdRemappingTable blockRemappingTable, TileEntityRemapper tileremapper, TileDataCache tilecache, ArrayBasedIdRemappingTable biomeRemappingTable) {
+		super(blockRemappingTable, tileremapper, tilecache);
+		this.biomeRemappingTable = biomeRemappingTable;
 	}
 
-	private static int getBlockState(ChunkSection section, int x, int y, int z) {
-		return section.blockdata.getBlockState((y << 8) | (z << 4) | (x));
+	protected final ArrayBasedIdRemappingTable biomeRemappingTable;
+	protected static final int flag_runtime = 1;
+
+	@Override
+	public void writeLegacyData(ByteBuf chunkdata) {
+		chunkdata.writeByte(sections.length);
+		for (int i = 0; i < sections.length; i++) {
+			chunkdata.writeByte(8); //subchunk version
+			ChunkSection section = sections[i];
+			if (section != null) {
+				chunkdata.writeByte(2); //blockstorage count.
+				BlockStorageReader storage = section.blockdata;
+				BlockPalette palette = new BlockPalette();
+				int bitsPerBlock = getPocketBitsPerBlock(storage.getBitsPerBlock());
+				BlockStorageWriterPE blockstorage = new BlockStorageWriterPE(bitsPerBlock, blocksInSection);
+				BlockStorageWriterPE waterstorage = new BlockStorageWriterPE(1, blocksInSection); //Waterlogged -> second storage. Only true/false per block
+				chunkdata.writeByte((bitsPerBlock << 1) | flag_runtime);
+				int blockIndex = 0;
+				for (int x = 0; x < 16; x++) { for (int z = 0; z < 16; z++) { for (int y = 0; y < 16; y++) {
+					if (PEBlocks.isPCBlockWaterlogged(getBlockState(i, storage, x, y, z))) { waterstorage.setBlockState(blockIndex, 1); }
+					blockstorage.setBlockState(blockIndex++, palette.getRuntimeId(PEBlocks.getPocketRuntimeId(blockDataRemappingTable.getRemap(getBlockState(i, storage, x, y, z)))));
+				}}}
+				for (int word : blockstorage.getBlockData()) {
+					chunkdata.writeIntLE(word);
+				}
+				ArraySerializer.writeSVarIntSVarIntArray(chunkdata, palette.getBlockStates());
+				chunkdata.writeByte((1 << 1) | flag_runtime); //Water storage.
+				for (int word : waterstorage.getBlockData()) {
+					chunkdata.writeIntLE(word);
+				}
+				VarNumberSerializer.writeSVarInt(chunkdata, 2); //Palette size
+				VarNumberSerializer.writeSVarInt(chunkdata, 0); //Palette air
+				VarNumberSerializer.writeSVarInt(chunkdata, 54); //Palette water
+			} else {
+				chunkdata.writeByte(1); //blockstorage count.
+				chunkdata.writeByte((1 << 1) | flag_runtime);
+				chunkdata.writeZero(512);
+				VarNumberSerializer.writeSVarInt(chunkdata, 1); //Palette size
+				VarNumberSerializer.writeSVarInt(chunkdata, 0); //Palette: Air
+			}
+		}
+		chunkdata.writeZero(512); //heightmap (will be recalculated by client anyway)
+		for (int i = 0; i < biomeData.length; i++) {
+			chunkdata.writeByte(biomeRemappingTable.getRemap(biomeData[i]));
+		}
+	}
+
+	protected int getBlockState(int section, BlockStorageReader storage, int x, int y, int z) {
+		return getBlockState(section, storage, (y << 8) | (z << 4) | (x));
+	}
+
+	protected static int getPocketBitsPerBlock(int pcBitsPerBlock) {
+		if (pcBitsPerBlock == 7) {
+			return 8;
+		} else if (pcBitsPerBlock > 8) {
+			return 16;
+		}
+		return pcBitsPerBlock;
 	}
 
 }

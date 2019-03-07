@@ -14,10 +14,10 @@ import protocolsupport.api.chat.components.TextComponent;
 import protocolsupport.api.chat.modifiers.ClickAction;
 import protocolsupport.api.chat.modifiers.HoverAction;
 import protocolsupport.api.chat.modifiers.Modifier;
-import protocolsupport.utils.chat.ClickActionSerializer;
-import protocolsupport.utils.chat.ComponentSerializer;
-import protocolsupport.utils.chat.HoverActionSerializer;
-import protocolsupport.utils.chat.ModifierSerializer;
+import protocolsupport.protocol.utils.chat.ClickActionSerializer;
+import protocolsupport.protocol.utils.chat.ComponentSerializer;
+import protocolsupport.protocol.utils.chat.HoverActionSerializer;
+import protocolsupport.protocol.utils.chat.ModifierSerializer;
 import protocolsupport.zplatform.ServerPlatform;
 
 public class ChatAPI {
@@ -29,7 +29,13 @@ public class ChatAPI {
 	.registerTypeHierarchyAdapter(HoverAction.class, new HoverActionSerializer())
 	.create();
 
-	public static BaseComponent fromJSON(String json) throws JsonParseException {
+	/**
+	 * Convers json string to chat component
+	 * @param json json string
+	 * @return chat component
+	 * @throws JsonParseException if passed string is not in json format
+	 */
+	public static BaseComponent fromJSON(String json) {
 		try {
 			BaseComponent result = gson.fromJson(json, BaseComponent.class);
 			return result != null ? result : new TextComponent("");
@@ -38,22 +44,51 @@ public class ChatAPI {
 		}
 	}
 
+	/**
+	 * Converts chat component to json string
+	 * @param component chatcomponent
+	 * @return json string
+	 */
 	public static String toJSON(BaseComponent component) {
 		return component != null ? gson.toJson(component) : null;
 	}
 
+	/**
+	 * Sends message to player
+	 * @param player player
+	 * @param message chat component
+	 */
 	public static void sendMessage(Player player, BaseComponent message) {
 		sendMessage(player, message, MessagePosition.CHAT);
 	}
 
+	/**
+	 * Sends message to player
+	 * @param player player
+	 * @param messageJson chat json string
+	 */
 	public static void sendMessage(Player player, String messageJson) {
 		sendMessage(player, messageJson, MessagePosition.CHAT);
 	}
 
+	/**
+	 * Sends message to player<br>
+	 * Allows setting position of the message
+	 * @param player player
+	 * @param message chat component
+	 * @param position message position
+	 */
 	public static void sendMessage(Player player, BaseComponent message, MessagePosition position) {
 		sendMessage(player, toJSON(message), position);
 	}
 
+	/**
+	 * Sends message to player<br>
+	 * Allows setting position of the message
+	 * @param player player
+	 * @param messageJson chat json string
+	 * @param position message position
+	 */
 	public static void sendMessage(Player player, String messageJson, MessagePosition position) {
 		Validate.notNull(player, "Player can't be null");
 		Validate.notNull(messageJson, "Message can't be null");

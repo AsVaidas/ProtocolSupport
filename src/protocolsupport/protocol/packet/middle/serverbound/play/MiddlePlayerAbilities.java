@@ -1,5 +1,6 @@
 package protocolsupport.protocol.packet.middle.serverbound.play;
 
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.ServerBoundPacket;
 import protocolsupport.protocol.packet.middle.ServerBoundMiddlePacket;
 import protocolsupport.protocol.packet.middleimpl.ServerBoundPacketData;
@@ -7,6 +8,13 @@ import protocolsupport.utils.recyclable.RecyclableCollection;
 import protocolsupport.utils.recyclable.RecyclableSingletonList;
 
 public abstract class MiddlePlayerAbilities extends ServerBoundMiddlePacket {
+
+	protected static final int flagOffsetIsFlying = 0x2;
+	protected static final int flagOffsetCanFly = 0x4;
+
+	public MiddlePlayerAbilities(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected int flags;
 	protected float flySpeed;

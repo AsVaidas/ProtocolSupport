@@ -1,22 +1,15 @@
 package protocolsupport.utils;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
-import java.util.function.Function;
+import java.util.stream.IntStream;
 
 import com.google.gson.Gson;
-
-import protocolsupport.ProtocolSupport;
 
 public class Utils {
 
@@ -45,27 +38,12 @@ public class Utils {
 		return obj.getClass().getName() + "(" + joiner.toString() + ")";
 	}
 
-	public static <K, V> V getFromMapOrCreateDefault(Map<K, V> map, K key, V defaultValue) {
-		return map.computeIfAbsent(key, k -> defaultValue);
-	}
-
 	public static <T> T getFromArrayOrNull(T[] array, int index) {
 		if ((index >= 0) && (index < array.length)) {
 			return array[index];
 		} else {
 			return null;
 		}
-	}
-
-	public static String exceptionMessage(Object... strings) {
-		StringBuilder msg = new StringBuilder();
-		msg.append(strings[0]).append(System.lineSeparator());
-		msg.append("Additional exception info:").append(System.lineSeparator());
-		for (int i = 1; i < strings.length; i++) {
-			msg.append("\t").append(strings[i]).append(System.lineSeparator());
-		}
-		msg.append("Stacktrace:");
-		return msg.toString();
 	}
 
 	public static String clampString(String string, int limit) {
@@ -112,32 +90,14 @@ public class Utils {
 		return (number + base) - mod;
 	}
 
-	public static <T> T getJavaPropertyValue(String property, T defaultValue, Function<String, T> converter) {
-		return getRawJavaPropertyValue("protocolsupport."+property, defaultValue, converter);
+	public static int shortDegree(int number, int system) {
+		if (number <= (system/-2)) { number += system; }
+		if (number > (system/2)) { number -= system; }
+		return number;
 	}
 
-	public static <T> T getRawJavaPropertyValue(String property, T defaultValue, Function<String, T> converter) {
-		try {
-			String value = System.getProperty(property);
-			if (value != null) {
-				return converter.apply(value);
-			}
-		} catch (Throwable t) {
-		}
-		return defaultValue;
-	}
-
-	public static boolean isTrue(Boolean b) {
-		return (b != null) && b;
-	}
-
-	private static final String resourcesDirName = "resources";
-	public static BufferedReader getResource(String name) {
-		return new BufferedReader(new InputStreamReader(getResourceAsStream(name), StandardCharsets.UTF_8));
-	}
-
-	public static InputStream getResourceAsStream(String name) {
-		return ProtocolSupport.class.getClassLoader().getResourceAsStream(resourcesDirName + "/" + name);
+	public static void repeat(int count, Runnable action) {
+	    IntStream.range(0, count).forEach(i -> action.run());
 	}
 
 }

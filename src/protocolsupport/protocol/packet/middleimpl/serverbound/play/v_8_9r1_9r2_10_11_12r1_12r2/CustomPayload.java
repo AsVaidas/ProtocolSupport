@@ -1,65 +1,67 @@
 package protocolsupport.protocol.packet.middleimpl.serverbound.play.v_8_9r1_9r2_10_11_12r1_12r2;
 
-import org.bukkit.Material;
-
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.handler.codec.DecoderException;
-import protocolsupport.api.ProtocolVersion;
-import protocolsupport.api.chat.ChatAPI;
-import protocolsupport.protocol.packet.middle.serverbound.play.MiddleCustomPayload;
-import protocolsupport.protocol.serializer.ItemStackSerializer;
+import protocolsupport.protocol.ConnectionImpl;
+import protocolsupport.protocol.packet.middle.ServerBoundMiddlePacket;
+import protocolsupport.protocol.packet.middleimpl.ServerBoundPacketData;
 import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.StringSerializer;
-import protocolsupport.protocol.utils.ProtocolVersionsHelper;
-import protocolsupport.zplatform.ServerPlatform;
-import protocolsupport.zplatform.itemstack.ItemStackWrapper;
-import protocolsupport.zplatform.itemstack.NBTTagCompoundWrapper;
-import protocolsupport.zplatform.itemstack.NBTTagListWrapper;
-import protocolsupport.zplatform.itemstack.NBTTagType;
+import protocolsupport.protocol.typeremapper.legacy.LegacyCustomPayloadChannelName;
+import protocolsupport.protocol.typeremapper.legacy.LegacyCustomPayloadData;
+import protocolsupport.utils.recyclable.RecyclableCollection;
 
-public class CustomPayload extends MiddleCustomPayload {
+public class CustomPayload extends ServerBoundMiddlePacket {
 
-	private final ByteBuf newdata = Unpooled.buffer();
+	public CustomPayload(ConnectionImpl connection) {
+		super(connection);
+	}
+
+	protected String tag;
+	protected ByteBuf data;
 
 	@Override
 	public void readFromClientData(ByteBuf clientdata) {
-		ProtocolVersion version = connection.getVersion();
 		tag = StringSerializer.readString(clientdata, version, 20);
-		if (clientdata.readableBytes() > Short.MAX_VALUE) {
-			throw new DecoderException("Payload may not be larger than 32767 bytes");
-		}
-		newdata.clear();
-		if (tag.equals("MC|AdvCdm")) {
-			tag = "MC|AdvCmd";
-			data = MiscSerializer.readAllBytes(clientdata);
-		} else if (tag.equals("MC|BSign") || tag.equals("MC|BEdit")) {
-			ItemStackWrapper book = ItemStackSerializer.readItemStack(clientdata, version, cache.getLocale(), true);
-			if (!book.isNull()) {
-				book.setType(Material.BOOK_AND_QUILL);
-				if ((version == ProtocolVersion.MINECRAFT_1_8) && tag.equals("MC|BSign")) {
-					remapBookPages(book, cache.getLocale());
-				}
-			}
-			ItemStackSerializer.writeItemStack(newdata, ProtocolVersionsHelper.LATEST_PC, cache.getLocale(), book, false);
-			data = MiscSerializer.readAllBytes(newdata);
-		} else {
-			data = MiscSerializer.readAllBytes(clientdata);
-		}
+		data = MiscSerializer.readAllBytesSlice(clientdata, Short.MAX_VALUE);
 	}
 
-	private static void remapBookPages(ItemStackWrapper itemstack, String locale) {
-		NBTTagCompoundWrapper tag = itemstack.getTag();
-		if (!tag.isNull()) {
-			if (tag.hasKeyOfType("pages", NBTTagType.LIST)) {
-				NBTTagListWrapper pages = tag.getList("pages", NBTTagType.STRING);
-				NBTTagListWrapper newPages = ServerPlatform.get().getWrapperFactory().createEmptyNBTList();
-				for (int i = 0; i < pages.size(); i++) {
-					newPages.addString(ChatAPI.fromJSON(pages.getString(i)).toLegacyText(locale));
-				}
-				tag.setList("pages", newPages);
+	@Override
+	public RecyclableCollection<ServerBoundPacketData> toNative() {
+		switch (tag) {
+			case LegacyCustomPayloadChannelName.LEGACY_REGISTER: {
+				return LegacyCustomPayloadData.transformRegisterUnregister(cache.getChannelsCache(), tag, data, true);
 			}
-			itemstack.setTag(tag);
+			case LegacyCustomPayloadChannelName.LEGACY_UNREGISTER: {
+				return LegacyCustomPayloadData.transformRegisterUnregister(cache.getChannelsCache(), tag, data, false);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_BOOK_EDIT: {
+				return LegacyCustomPayloadData.transformBookEdit(version, cache.getAttributesCache().getLocale(), data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_BOOK_SIGN: {
+				return LegacyCustomPayloadData.transformBookSign(version, cache.getAttributesCache().getLocale(), data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_SET_BEACON: {
+				return LegacyCustomPayloadData.transformSetBeaconEffect(data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_NAME_ITEM: {
+				return LegacyCustomPayloadData.transformNameItemSString(version, data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_TRADE_SELECT: {
+				return LegacyCustomPayloadData.transformTradeSelect(data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_STRUCTURE_BLOCK: {
+				return LegacyCustomPayloadData.transformStructureBlock(version, data);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_COMMAND_RIGHT_NAME:
+			case LegacyCustomPayloadChannelName.LEGACY_COMMAND_TYPO_NAME: {
+				return LegacyCustomPayloadData.transformAdvancedCommandBlockEdit(version, data, true);
+			}
+			case LegacyCustomPayloadChannelName.LEGACY_COMMAND_BLOCK_NAME: {
+				return LegacyCustomPayloadData.transformAutoCommandBlockEdit(version, data);
+			}
+			default: {
+				return LegacyCustomPayloadData.transformCustomPayload(tag, data);
+			}
 		}
 	}
 

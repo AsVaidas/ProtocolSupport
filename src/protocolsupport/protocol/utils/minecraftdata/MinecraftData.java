@@ -1,41 +1,41 @@
 package protocolsupport.protocol.utils.minecraftdata;
 
-import java.io.BufferedReader;
+import java.util.Arrays;
+import java.util.stream.Stream;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonParser;
+import org.bukkit.Material;
 
-import protocolsupport.utils.Utils;
+import protocolsupport.api.MaterialAPI;
 
 public class MinecraftData {
 
-	public static String addNamespacePrefix(String val) {
-		return "minecraft:" + val;
+	public static String getResourcePath(String name) {
+		return ("data/" + name);
 	}
 
-	public static Iterable<JsonElement> iterateJsonArrayResource(String name) {
-		return new JsonParser().parse(getResource(name)).getAsJsonArray();
+	public static final int ITEM_COUNT = (int) getItems().count();
+
+	public static final int BLOCK_COUNT = (int) getBlocks().count();
+
+	public static final int BLOCKDATA_COUNT =
+		getBlocks()
+		.mapToInt(material -> MaterialAPI.getBlockDataList(material).size())
+		.sum();
+
+	@SuppressWarnings("deprecation")
+	public static Stream<Material> getBlocks() {
+		return
+			Arrays.stream(Material.values())
+			.filter(mat -> !mat.isLegacy())
+			.filter(Material::isBlock);
 	}
 
-	public static BufferedReader getResource(String name) {
-		return Utils.getResource("data/" + name);
-	}
-
-	public static final int BLOCK_ID_MAX = 4096;
-	public static final int BLOCK_DATA_MAX = 16;
-	public static final int ITEM_ID_MAX = Short.MAX_VALUE;
-	public static final int ITEM_DATA_MAX = (int) (Math.pow(2, 16) - 1);
-
-	public static int getBlockStateFromIdAndData(int id, int data) {
-		return (id << 4) | data;
-	}
-
-	public static int getBlockIdFromState(int blockstate) {
-		return blockstate >> 4;
-	}
-
-	public static int getBlockDataFromState(int blockstate) {
-		return blockstate & 0xF;
+	@SuppressWarnings("deprecation")
+	public static Stream<Material> getItems() {
+		return
+			Arrays.stream(Material.values())
+			.filter(mat -> !mat.isLegacy())
+			.filter(Material::isItem);
 	}
 
 }

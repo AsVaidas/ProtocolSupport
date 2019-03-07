@@ -3,10 +3,8 @@ package protocolsupport.protocol.packet.handler;
 import java.net.InetAddress;
 import java.text.MessageFormat;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -25,16 +23,18 @@ import protocolsupport.api.Connection;
 import protocolsupport.api.events.ServerPingResponseEvent;
 import protocolsupport.api.events.ServerPingResponseEvent.ProtocolInfo;
 import protocolsupport.protocol.ConnectionImpl;
-import protocolsupport.utils.Utils;
+import protocolsupport.utils.JavaSystemProperty;
 import protocolsupport.zplatform.ServerPlatform;
 import protocolsupport.zplatform.network.NetworkManagerWrapper;
+import protocolsupportbuildprocessor.Preload;
 
+@Preload
 public abstract class AbstractStatusListener {
 
-	private static final int statusThreads = Utils.getJavaPropertyValue("statusthreads", 2, Integer::parseInt);
-	private static final int statusThreadKeepAlive = Utils.getJavaPropertyValue("statusthreadskeepalive", 60, Integer::parseInt);
+	private static final int statusThreads = JavaSystemProperty.getValue("statusthreads", 2, Integer::parseInt);
+	private static final int statusThreadKeepAlive = JavaSystemProperty.getValue("statusthreadskeepalive", 60, Integer::parseInt);
 
-	public static void init() {
+	static {
 		ProtocolSupport.logInfo(MessageFormat.format("Status threads max count: {0}, keep alive time: {1}", statusThreads, statusThreadKeepAlive));
 	}
 
@@ -58,7 +58,7 @@ public abstract class AbstractStatusListener {
 		}
 		sentInfo = true;
 
-		executeTask(() -> {
+		statusprocessor.execute(() -> {
 			ServerPingResponseEvent revent = createResponse(networkManager.getChannel());
 			networkManager.sendPacket(ServerPlatform.get().getPacketFactory().createStausServerInfoPacket(
 				revent.getPlayers(), revent.getProtocolInfo(),
@@ -79,37 +79,28 @@ public abstract class AbstractStatusListener {
 		bevent.setServerIcon(Bukkit.getServerIcon());
 		Bukkit.getPluginManager().callEvent(bevent);
 
-		String icon = bevent.getIcon() != null ? ServerPlatform.get().getMiscUtils().convertBukkitIconToBase64(bevent.getIcon()) : null;
-		motd = bevent.getMotd();
-		maxPlayers = bevent.getMaxPlayers();
-
 		ServerPingResponseEvent revent = new ServerPingResponseEvent(
 			connection,
 			new ProtocolInfo(connection.getVersion(), ServerPlatform.get().getMiscUtils().getModName() + " " + ServerPlatform.get().getMiscUtils().getVersionName()),
-			icon, motd, maxPlayers, bevent.getSampleText()
+			bevent.getIcon() != null ? ServerPlatform.get().getMiscUtils().convertBukkitIconToBase64(bevent.getIcon()) : null,
+			bevent.getMotd(), bevent.getMaxPlayers(),
+			bevent.players.stream().map(Player::getName).collect(Collectors.toList())
 		);
 		Bukkit.getPluginManager().callEvent(revent);
 
 		return revent;
 	}
 
-	public static void executeTask(Runnable runnable) {
-		statusprocessor.execute(runnable);
-	}
-
-	@SuppressWarnings("unchecked")
 	public void handlePing(long pingId) {
 		networkManager.sendPacket(ServerPlatform.get().getPacketFactory().createStatusPongPacket(pingId), ChannelFutureListener.CLOSE);
 	}
 
 	public static class InternalServerListPingEvent extends ServerListPingEvent {
 
-		private final List<Player> players;
-		private Set<String> sample;
+		protected final List<Player> players;
 		protected InternalServerListPingEvent(InetAddress address, String motd, int maxPlayers, List<Player> players) {
 			super(address, motd, maxPlayers);
 			this.players = players;
-			this.sample = this.players.stream().map(Player::getName).collect(Collectors.toSet());
 		}
 
 		protected CachedServerIcon icon;
@@ -122,36 +113,9 @@ public abstract class AbstractStatusListener {
 			this.icon = icon;
 		}
 
-		public List<String> getSampleText() {
-			return new ArrayList<String>(sample);
-		}
-
 		@Override
 		public Iterator<Player> iterator() {
-			return new Iterator<Player>() {
-				private final Iterator<Player> iterator = players.iterator();
-				private Player player;
-				@Override
-				public boolean hasNext() {
-					return iterator.hasNext();
-				}
-
-				@Override
-				public Player next() {
-					return (player = iterator.next());
-				}
-
-				@Override
-				public void remove() {
-					iterator.remove();
-					sample.remove(player.getName());
-				}
-			};
-		}
-
-		public void setSampleText(List<String> sample) {
-			this.sample = new HashSet<>(sample);
-			this.players.removeIf(player -> !sample.contains(player.getName()));
+			return players.iterator();
 		}
 
 	}

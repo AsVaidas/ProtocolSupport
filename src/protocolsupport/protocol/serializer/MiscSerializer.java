@@ -2,30 +2,14 @@ package protocolsupport.protocol.serializer;
 
 import java.text.MessageFormat;
 import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.ObjIntConsumer;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
-import protocolsupport.api.ProtocolType;
-import protocolsupport.api.ProtocolVersion;
 import protocolsupport.protocol.utils.EnumConstantLookups;
 
 public class MiscSerializer {
-
-	public static float readLFloat(ByteBuf from) {
-		return Float.intBitsToFloat(from.readIntLE());
-	}
-
-	public static void writeLFloat(ByteBuf to, float f) {
-		to.writeIntLE(Float.floatToIntBits(f));
-	}
-
-	public static double readLDouble(ByteBuf from) {
-		return Double.longBitsToDouble(from.readLongLE());
-	}
-
-	public static void writeLDouble(ByteBuf to, double d) {
-		to.writeLongLE(Double.doubleToLongBits(d));
-	}
 
 	public static <T extends Enum<T>> T readVarIntEnum(ByteBuf from, EnumConstantLookups.EnumConstantLookup<T> lookup) {
 		return lookup.getByOrdinal(VarNumberSerializer.readVarInt(from));
@@ -47,22 +31,27 @@ public class MiscSerializer {
 		return new UUID(from.readLong(), from.readLong());
 	}
 
-	public static void writeUUID(ByteBuf to, ProtocolVersion version, UUID uuid) {
-		if (isUsingLittleEndian(version)) {
-			to.writeLongLE(uuid.getMostSignificantBits());
-			to.writeLongLE(uuid.getLeastSignificantBits());
-		} else {
-			to.writeLong(uuid.getMostSignificantBits());
-			to.writeLong(uuid.getLeastSignificantBits());
-		}
+	public static void writeUUID(ByteBuf to, UUID uuid) {
+		to.writeLong(uuid.getMostSignificantBits());
+		to.writeLong(uuid.getLeastSignificantBits());
 	}
 
-	private static boolean isUsingLittleEndian(ProtocolVersion version) {
-		return version.getProtocolType() == ProtocolType.PE;
+	public static void writePEUUID(ByteBuf to, UUID uuid) {
+		to.writeLongLE(uuid.getMostSignificantBits());
+		to.writeLongLE(uuid.getLeastSignificantBits());
 	}
 
 	public static byte[] readAllBytes(ByteBuf buf) {
 		return MiscSerializer.readBytes(buf, buf.readableBytes());
+	}
+
+	public static ByteBuf readAllBytesSlice(ByteBuf from) {
+		return from.readSlice(from.readableBytes());
+	}
+
+	public static ByteBuf readAllBytesSlice(ByteBuf buf, int limit) {
+		checkLimit(buf.readableBytes(), limit);
+		return readAllBytesSlice(buf);
 	}
 
 	public static byte[] readBytes(ByteBuf buf, int length) {
@@ -75,6 +64,17 @@ public class MiscSerializer {
 		if (length > limit) {
 			throw new DecoderException(MessageFormat.format("Size {0} is bigger than allowed {1}", length, limit));
 		}
+	}
+
+	public static void writeLengthPrefixedBytes(ByteBuf to, ObjIntConsumer<ByteBuf> lengthWriter, Consumer<ByteBuf> dataWriter) {
+		int lengthWriterIndex = to.writerIndex();
+		lengthWriter.accept(to, 0);
+		int writerIndexDataStart = to.writerIndex();
+		dataWriter.accept(to);
+		int writerIndexDataEnd = to.writerIndex();
+		to.writerIndex(lengthWriterIndex);
+		lengthWriter.accept(to, writerIndexDataEnd - writerIndexDataStart);
+		to.writerIndex(writerIndexDataEnd);
 	}
 
 }

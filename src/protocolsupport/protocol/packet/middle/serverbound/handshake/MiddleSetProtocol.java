@@ -1,5 +1,6 @@
 package protocolsupport.protocol.packet.middle.serverbound.handshake;
 
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.ServerBoundPacket;
 import protocolsupport.protocol.packet.middle.ServerBoundMiddlePacket;
 import protocolsupport.protocol.packet.middleimpl.ServerBoundPacketData;
@@ -11,6 +12,10 @@ import protocolsupport.utils.recyclable.RecyclableSingletonList;
 
 public abstract class MiddleSetProtocol extends ServerBoundMiddlePacket {
 
+	public MiddleSetProtocol(ConnectionImpl connection) {
+		super(connection);
+	}
+
 	protected String hostname;
 	protected int port;
 	protected int nextState;
@@ -19,7 +24,7 @@ public abstract class MiddleSetProtocol extends ServerBoundMiddlePacket {
 	public RecyclableCollection<ServerBoundPacketData> toNative() {
 		ServerBoundPacketData creator = ServerBoundPacketData.create(ServerBoundPacket.HANDSHAKE_START);
 		VarNumberSerializer.writeVarInt(creator, ProtocolVersionsHelper.LATEST_PC.getId());
-		StringSerializer.writeString(creator, ProtocolVersionsHelper.LATEST_PC, hostname);
+		StringSerializer.writeVarIntUTF8String(creator, hostname);
 		creator.writeShort(port);
 		VarNumberSerializer.writeVarInt(creator, nextState);
 		return RecyclableSingletonList.create(creator);

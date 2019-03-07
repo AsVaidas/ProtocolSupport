@@ -26,6 +26,8 @@ public class ProtocolUtils {
 	}
 
 	protected static ProtocolVersion readOldHandshake(ByteBuf data) {
+		//pre 1.3.1 doesn't send a protocol version
+		//but we assume first byte as protocol versions anyway because the chance of string length first byte being a valid protocol versions number is too small
 		return ProtocolVersionsHelper.getOldProtocolVersion(data.readUnsignedByte());
 	}
 
@@ -39,17 +41,8 @@ public class ProtocolUtils {
 	}
 
 	protected static ProtocolVersion readPEHandshake(ByteBuf data) {
-		data.readByte();
-		data.readByte();
 		int incomingversion = data.readInt();
-		int cversion = ProtocolVersion.MINECRAFT_PE.getId();
-		if (incomingversion == cversion) {
-			return ProtocolVersion.MINECRAFT_PE;
-		} else if (incomingversion < cversion) {
-			return ProtocolVersion.MINECRAFT_PE_LEGACY;
-		} else {
-			return ProtocolVersion.MINECRAFT_PE_FUTURE;
-		}
+		return ProtocolVersionsHelper.getPEProtocolVersion(incomingversion);
 	}
 
 }

@@ -50,6 +50,20 @@ public class JsonUtils {
 		throw new JsonSyntaxException("Missing " + name + ", expected to find a string");
 	}
 
+	public static float getAsFloat(JsonElement jsonElement, String s) {
+		if (jsonElement.isJsonPrimitive() && jsonElement.getAsJsonPrimitive().isNumber()) {
+			return jsonElement.getAsFloat();
+		}
+		throw new JsonSyntaxException("Expected " + s + " to be a Float, was " + toString(jsonElement));
+	}
+
+	public static float getFloat(JsonObject jsonObject, String s) {
+		if (jsonObject.has(s)) {
+			return getAsFloat(jsonObject.get(s), s);
+		}
+		throw new JsonSyntaxException("Missing " + s + ", expected to find a Float");
+	}
+
 	public static int getAsInt(JsonElement jsonElement, String s) {
 		if (jsonElement.isJsonPrimitive() && jsonElement.getAsJsonPrimitive().isNumber()) {
 			return jsonElement.getAsInt();
@@ -64,18 +78,32 @@ public class JsonUtils {
 		throw new JsonSyntaxException("Missing " + s + ", expected to find a Int");
 	}
 
-	public static JsonObject getAsJsonObject(JsonElement jsonElement, String name) {
-		if (jsonElement.isJsonObject()) {
-			return jsonElement.getAsJsonObject();
+	public static short getAsShort(JsonElement jsonElement, String s) {
+		if (jsonElement.isJsonPrimitive() && jsonElement.getAsJsonPrimitive().isNumber()) {
+			return jsonElement.getAsShort();
 		}
-		throw new JsonSyntaxException("Expected " + name + " to be a JsonObject, was " + toString(jsonElement));
+		throw new JsonSyntaxException("Expected " + s + " to be a Int, was " + toString(jsonElement));
+	}
+
+	public static short getShort(JsonObject jsonObject, String s) {
+		if (jsonObject.has(s)) {
+			return getAsShort(jsonObject.get(s), s);
+		}
+		throw new JsonSyntaxException("Missing " + s + ", expected to find a Int");
 	}
 
 	public static JsonObject getJsonObject(JsonObject jsonObject, String name) {
 		if (jsonObject.has(name)) {
 			return getAsJsonObject(jsonObject.get(name), name);
 		}
-		throw new JsonSyntaxException("Missing " + name + ", expected to find an Object");
+		throw new JsonSyntaxException("Missing " + name + ", expected to find a JsonObject");
+	}
+
+	public static JsonObject getAsJsonObject(JsonElement jsonElement, String name) {
+		if (jsonElement.isJsonObject()) {
+			return jsonElement.getAsJsonObject();
+		}
+		throw new JsonSyntaxException("Expected " + name + " to be a JsonObject, was " + toString(jsonElement));
 	}
 
 	private static String toString(JsonElement jsonElement) {

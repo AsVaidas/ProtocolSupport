@@ -1,47 +1,97 @@
 package protocolsupport.protocol.packet.middleimpl.clientbound.play.v_pe;
 
-import io.netty.buffer.ByteBuf;
+import org.bukkit.Material;
+
+import protocolsupport.api.MaterialAPI;
 import protocolsupport.api.ProtocolVersion;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.clientbound.play.MiddleEntityMetadata;
 import protocolsupport.protocol.packet.middleimpl.ClientBoundPacketData;
-import protocolsupport.protocol.packet.middleimpl.clientbound.play.v_pe.SpawnObject.PreparedItem;
+import protocolsupport.protocol.packet.middleimpl.clientbound.play.v_pe.EntitySetAttributes.AttributeInfo;
+import protocolsupport.protocol.serializer.DataWatcherSerializer;
 import protocolsupport.protocol.serializer.VarNumberSerializer;
+import protocolsupport.protocol.storage.netcache.NetworkDataCache;
+import protocolsupport.protocol.typeremapper.entity.EntityRemapper;
 import protocolsupport.protocol.typeremapper.pe.PEPacketIDs;
-import protocolsupport.protocol.typeremapper.watchedentity.remapper.DataWatcherObjectIndex;
 import protocolsupport.protocol.utils.datawatcher.DataWatcherObject;
-import protocolsupport.protocol.utils.datawatcher.DataWatcherObjectIdRegistry;
+import protocolsupport.protocol.utils.datawatcher.DataWatcherObjectIndex;
+import protocolsupport.protocol.utils.datawatcher.objects.DataWatcherObjectFloatLe;
 import protocolsupport.protocol.utils.datawatcher.objects.DataWatcherObjectSVarLong;
-import protocolsupport.protocol.utils.types.NetworkEntity;
+import protocolsupport.protocol.utils.networkentity.NetworkEntity;
+import protocolsupport.protocol.utils.networkentity.NetworkEntityItemDataCache;
+import protocolsupport.protocol.utils.networkentity.NetworkEntityType;
+import protocolsupport.protocol.utils.types.NetworkItemStack;
 import protocolsupport.utils.CollectionsUtils.ArrayMap;
+import protocolsupport.utils.ObjectFloatTuple;
 import protocolsupport.utils.recyclable.RecyclableArrayList;
 import protocolsupport.utils.recyclable.RecyclableCollection;
-import protocolsupport.zplatform.itemstack.ItemStackWrapper;
 
 public class EntityMetadata extends MiddleEntityMetadata {
+
+	public EntityMetadata(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	@Override
 	public RecyclableCollection<ClientBoundPacketData> toData() {
 		RecyclableArrayList<ClientBoundPacketData> packets = RecyclableArrayList.create();
-		NetworkEntity entity = cache.getWatchedEntity(entityId);
-
-		if(entity == null) {
+		ProtocolVersion version = connection.getVersion();
+		String locale = cache.getAttributesCache().getLocale();
+		NetworkEntity entity = cache.getWatchedEntityCache().getWatchedEntity(entityId);
+		if (entity == null) {
 			return packets;
 		}
-		switch(entity.getType()) {
-			case ITEM: {
-				DataWatcherObject<?> itemWatcher = metadata.getOriginal().get(DataWatcherObjectIndex.Item.ITEM);
-				if(itemWatcher != null) {
-					PreparedItem i = cache.getPreparedItem(entityId);
-					if(i != null) {
-						packets.addAll(i.updateItem(connection.getVersion(), (ItemStackWrapper) metadata.getOriginal().get(DataWatcherObjectIndex.Item.ITEM).getValue()));
-					}
-				}
-			}
-			default: {
-				packets.add(create(entity, cache.getLocale(), metadata.getRemapped(), connection.getVersion()));
-			}
+		//TODO add these as some kind of function based on NetworkEntityType, if this gets unmanagable.
+		//Special metadata -> other packet remapper.
+		//Item type -> Spawn item remapper.
+		if (entity.getType().isOfType(NetworkEntityType.ITEM)) {
+			DataWatcherObjectIndex.Item.ITEM.getValue(entityRemapper.getOriginalMetadata()).ifPresent(itemWatcher -> {
+				NetworkEntityItemDataCache itemDataCache = (NetworkEntityItemDataCache) entity.getDataCache();
+				packets.addAll(itemDataCache.updateItem(version, entity.getId(), itemWatcher.getValue()));
+			});
 		}
-
+		//Invisible names. Applied after possible size remappers.
+		if (!entity.getType().isOfType(NetworkEntityType.PLAYER)) {
+			//text doesnt display when invisible, so lets restore the java behavior and make it invisible another way
+			boolean hasName = entity.getDataCache().getPeBaseFlag(PeMetaBase.FLAG_ALWAYS_SHOW_NAMETAG);
+			boolean isInvisible = entity.getDataCache().getPeBaseFlag(PeMetaBase.FLAG_INVISIBLE);
+			if (isInvisible && hasName) {
+				entity.getDataCache().setPeBaseFlag(PeMetaBase.FLAG_INVISIBLE, false);
+				entityRemapper.getRemappedMetadata().put(PeMetaBase.SCALE, new DataWatcherObjectFloatLe(0));
+				entityRemapper.getRemappedMetadata().put(PeMetaBase.BOUNDINGBOX_HEIGTH, new DataWatcherObjectFloatLe(0));
+				entityRemapper.getRemappedMetadata().put(PeMetaBase.BOUNDINGBOX_WIDTH, new DataWatcherObjectFloatLe(0));
+			}
+		} else { //player flags
+			if (cache.getWatchedEntityCache().isSelf(entity.getId())) {
+				entity.getDataCache().setPeBaseFlag(PeMetaBase.FLAG_NO_AI, false);
+			}
+			entity.getDataCache().setPeBaseFlag(PeMetaBase.FLAG_CAN_CLIMB, true);
+		}
+		//Meta health -> attribute packet remapper.
+		if (entity.getType().isOfType(NetworkEntityType.LIVING)) {
+			DataWatcherObjectIndex.EntityLiving.HEALTH.getValue(entityRemapper.getOriginalMetadata()).ifPresent(healthWatcher -> {
+				packets.add(EntitySetAttributes.create(version, entity, new ObjectFloatTuple<>(AttributeInfo.HEALTH, healthWatcher.getValue())));
+			});
+		}
+		//Meta armor -> armor packet remapper.
+		if (entity.getType().isOfType(NetworkEntityType.COMMON_HORSE)) {
+			DataWatcherObjectIndex.BattleHorse.ARMOR.getValue(entityRemapper.getOriginalMetadata()).ifPresent(armorWatcher -> {
+				NetworkItemStack armour = new NetworkItemStack();
+				switch (armorWatcher.getValue()) {
+					case 0: { armour = NetworkItemStack.NULL; break; }
+					case 1: { armour.setTypeId(MaterialAPI.getItemNetworkId(Material.IRON_HORSE_ARMOR)); break; }
+					case 2: { armour.setTypeId(MaterialAPI.getItemNetworkId(Material.GOLDEN_HORSE_ARMOR)); break; }
+					case 3: { armour.setTypeId(MaterialAPI.getItemNetworkId(Material.DIAMOND_HORSE_ARMOR)); break; }
+				}
+				packets.add(EntityEquipment.create(version, locale, entityId,
+					NetworkItemStack.NULL,
+					armour,
+					NetworkItemStack.NULL,
+					NetworkItemStack.NULL
+				));
+			});
+		}
+		packets.add(create(entity, locale, entityRemapper.getRemappedMetadata(), version));
 		return packets;
 	}
 
@@ -50,7 +100,10 @@ public class EntityMetadata extends MiddleEntityMetadata {
 	}
 
 	public static ClientBoundPacketData createFaux(NetworkEntity entity, String locale, ProtocolVersion version) {
-		return create(entity, locale, transform(entity, new ArrayMap<DataWatcherObject<?>>(76), version), version);
+		EntityRemapper faux = new EntityRemapper(version);
+		faux.readEntity(entity);
+		faux.remap(true);
+		return create(entity, locale, transform(entity, faux.getRemappedMetadata(), version), version);
 	}
 
 	public static ArrayMap<DataWatcherObject<?>> transform(NetworkEntity entity, ArrayMap<DataWatcherObject<?>> peMetadata, ProtocolVersion version) {
@@ -59,107 +112,175 @@ public class EntityMetadata extends MiddleEntityMetadata {
 	}
 
 	public static ClientBoundPacketData create(NetworkEntity entity, String locale, ArrayMap<DataWatcherObject<?>> peMetadata, ProtocolVersion version) {
-		ClientBoundPacketData serializer = ClientBoundPacketData.create(PEPacketIDs.SET_ENTITY_DATA, version);
+		ClientBoundPacketData serializer = ClientBoundPacketData.create(PEPacketIDs.SET_ENTITY_DATA);
 		VarNumberSerializer.writeVarLong(serializer, entity.getId());
-		EntityMetadata.encodeMeta(serializer, version, locale, transform(entity, peMetadata, version));
+		DataWatcherSerializer.writePEData(serializer, version, locale, transform(entity, peMetadata, version));
 		return serializer;
-	}
-
-	public static void encodeMeta(ByteBuf to, ProtocolVersion version, String locale, ArrayMap<DataWatcherObject<?>> peMetadata) {
-
-		//For now. Iterate two times :P
-		int entries = 0;
-		for (int key = peMetadata.getMinKey(); key < peMetadata.getMaxKey(); key++) {
-			DataWatcherObject<?> object = peMetadata.get(key);
-			if (object != null) {
-				entries++;
-			}
-		}
-		//We stored that. Now write the length first and then go.
-		VarNumberSerializer.writeVarInt(to, entries);
-		for (int key = peMetadata.getMinKey(); key < peMetadata.getMaxKey(); key++) {
-			DataWatcherObject<?> object = peMetadata.get(key);
-			if (object != null) {
-				VarNumberSerializer.writeVarInt(to, key);
-				VarNumberSerializer.writeVarInt(to, DataWatcherObjectIdRegistry.getTypeId(object, version));
-				object.writeToStream(to, version, locale);
-				entries++;
-			}
-		}
-
-
-		//TODO Fake this stuff.
-		/*VarNumberSerializer.writeVarInt(to, 0); //Fake
-		int entries = 0;
-		for (int key = peMetadata.getMinKey(); key < peMetadata.getMaxKey(); key++) {
-			DataWatcherObject<?> object = peMetadata.get(key);
-			if (object != null) {
-				VarNumberSerializer.writeVarInt(to, key);
-				VarNumberSerializer.writeVarInt(to, DataWatcherObjectIdRegistry.getTypeId(object, version));
-				object.writeToStream(to, version, locale);
-				entries++;
-			}
-		}*/
-
 	}
 
 	public static class PeMetaBase {
 
 		//PE's extra baseflags. TODO: Implement more flags (Easy Remapping)
-		protected static int id = 1;
-		protected static int takeNextId() {
-			return id++;
+		protected static int flagId = 1;
+
+		protected static int takeNextFlag() {
+			return flagId++;
 		}
 
-		public static int FLAG_ON_FIRE = takeNextId(); //1
-		public static int FLAG_SNEAKING = takeNextId();
-		public static int FLAG_RIDING = takeNextId();
-		public static int FLAG_SPRINTING = takeNextId();
-		public static int FLAG_USING_ITEM = takeNextId();
-		public static int FLAG_INVISIBLE = takeNextId();
-		public static int FLAG_TEMPTED = takeNextId();
-		public static int FLAG_IN_LOVE = takeNextId();
-		public static int FLAG_SADDLED = takeNextId();
-		public static int FLAG_POWERED = takeNextId(); //10
-		public static int FLAG_IGNITED = takeNextId();
-		public static int FLAG_BABY = takeNextId();
-		public static int FLAG_CRITICAL = takeNextId();
-		public static int FLAG_SHOW_NAMETAG = takeNextId();
-		public static int FLAG_ALWAYS_SHOW_NAMETAG = takeNextId();
-		public static int FLAG_NO_AI = takeNextId();
-		public static int FLAG_SILENT = takeNextId();
-		public static int FLAG_unknown1 = takeNextId();
-		public static int FLAG_CLIMBING = takeNextId();
-		public static int FLAG_CAN_CLIMB = takeNextId(); //20
-		public static int FLAG_CAN_SWIM = takeNextId();
-		public static int FLAG_CAN_FLY = takeNextId();
-		public static int FLAG_RESTING = takeNextId();
-		public static int FLAG_SITTING = takeNextId();
-		public static int FLAG_ANGRY = takeNextId();
-		public static int FLAG_INTERESTED = takeNextId();
-		public static int FLAG_CHARGED = takeNextId();
-		public static int FLAG_TAMED = takeNextId();
-		public static int FLAG_LEASHED = takeNextId();
-		public static int FLAG_SHEARED = takeNextId(); //30
-		public static int FLAG_GLIDING = takeNextId();
-		public static int FLAG_ELDER = takeNextId();
-		public static int FLAG_MOVING = takeNextId();
-		public static int FLAG_BREATHING = takeNextId();
-		public static int FLAG_CHESTED = takeNextId();
-		public static int FLAG_STACKABLE = takeNextId();
-		public static int FLAG_SHOW_BASE = takeNextId();
-		public static int FLAG_REARING = takeNextId();
-		public static int FLAG_VIBRATING = takeNextId();
-		public static int FLAG_IDLING = takeNextId(); //40
-		public static int FLAG_EVOKER_SPELL = takeNextId();
-		public static int FLAG_CHARGE_ATTACK = takeNextId();
-		public static int FLAG_WASD_CONTROLLED = takeNextId();
-		public static int FLAG_unknown2 = takeNextId();
-		public static int FLAG_LINGER = takeNextId();
-		public static int FLAG_COLLIDE = takeNextId();
-		public static int FLAG_GRAVITY = takeNextId();
-		public static int FLAG_unknown3 = takeNextId();
-		public static int FLAG_DANCING = takeNextId();
+		public static final int FLAG_ON_FIRE = takeNextFlag(); //0 (BitPos 1, flag 0)
+		public static final int FLAG_SNEAKING = takeNextFlag(); //1
+		public static final int FLAG_RIDING = takeNextFlag();
+		public static final int FLAG_SPRINTING = takeNextFlag();
+		public static final int FLAG_USING_ITEM = takeNextFlag();
+		public static final int FLAG_INVISIBLE = takeNextFlag();
+		public static final int FLAG_TEMPTED = takeNextFlag();
+		public static final int FLAG_IN_LOVE = takeNextFlag();
+		public static final int FLAG_SADDLED = takeNextFlag();
+		public static final int FLAG_POWERED = takeNextFlag();
+		public static final int FLAG_IGNITED = takeNextFlag(); //10
+		public static final int FLAG_BABY = takeNextFlag();
+		public static final int FLAG_CONVERTING = takeNextFlag();
+		public static final int FLAG_CRITICAL = takeNextFlag();
+		public static final int FLAG_SHOW_NAMETAG = takeNextFlag();
+		public static final int FLAG_ALWAYS_SHOW_NAMETAG = takeNextFlag();
+		public static final int FLAG_NO_AI = takeNextFlag();
+		public static final int FLAG_SILENT = takeNextFlag();
+		public static final int FLAG_CLIMBING = takeNextFlag();
+		public static final int FLAG_CAN_CLIMB = takeNextFlag();
+		public static final int FLAG_CAN_SWIM = takeNextFlag(); //20
+		public static final int FLAG_CAN_FLY = takeNextFlag();
+		public static final int FLAG_WALKER = takeNextFlag();
+		public static final int FLAG_RESTING = takeNextFlag();
+		public static final int FLAG_SITTING = takeNextFlag();
+		public static final int FLAG_ANGRY = takeNextFlag();
+		public static final int FLAG_INTERESTED = takeNextFlag();
+		public static final int FLAG_CHARGED = takeNextFlag();
+		public static final int FLAG_TAMED = takeNextFlag();
+		public static final int FLAG_ORPHANED = takeNextFlag();
+		public static final int FLAG_LEASHED = takeNextFlag(); //30
+		public static final int FLAG_SHEARED = takeNextFlag();
+		public static final int FLAG_GLIDING = takeNextFlag();
+		public static final int FLAG_ELDER = takeNextFlag();
+		public static final int FLAG_MOVING = takeNextFlag();
+		public static final int FLAG_BREATHING = takeNextFlag();
+		public static final int FLAG_CHESTED = takeNextFlag();
+		public static final int FLAG_STACKABLE = takeNextFlag();
+		public static final int FLAG_SHOW_BASE = takeNextFlag();
+		public static final int FLAG_REARING = takeNextFlag();
+		public static final int FLAG_VIBRATING = takeNextFlag(); //40
+		public static final int FLAG_IDLING = takeNextFlag();
+		public static final int FLAG_EVOKER_SPELL = takeNextFlag();
+		public static final int FLAG_CHARGE_ATTACK = takeNextFlag();
+		public static final int FLAG_WASD_CONTROLLED = takeNextFlag();
+		public static final int FLAG_CAN_POWER_JUMP = takeNextFlag();
+		public static final int FLAG_LINGER = takeNextFlag();
+		public static final int FLAG_COLLIDE = takeNextFlag();
+		public static final int FLAG_GRAVITY = takeNextFlag();
+		public static final int FLAG_FIRE_IMMUNE = takeNextFlag();
+		public static final int FLAG_DANCING = takeNextFlag(); //50
+		public static final int FLAG_ENCHANTED = takeNextFlag();
+		public static final int FLAG_SHOW_TRIDENT_ROPE = takeNextFlag();
+		public static final int FLAG_CONTAINER_PRIVATE = takeNextFlag();
+		public static final int FLAG_TRANSORMATION = takeNextFlag();
+		public static final int FLAG_SPIN_ATTACK = takeNextFlag();
+		public static final int FLAG_SWIMMING = takeNextFlag();
+		public static final int FLAG_BRIBED = takeNextFlag();
+		public static final int FLAG_PREGNANT = takeNextFlag();
+		public static final int FLAG_LAYING_EGG = takeNextFlag();
+
+		protected static int metaId = 0;
+
+		protected static int takeNextMeta() {
+			return metaId++;
+		}
+
+		public static final int FLAGS = takeNextMeta(); //0
+		public static final int HEALTH = takeNextMeta(); //1
+		public static final int VARIANT = takeNextMeta();
+		public static final int COLOR = takeNextMeta();
+		public static final int NAMETAG = takeNextMeta();
+		public static final int OWNER = takeNextMeta();
+		public static final int TARGET = takeNextMeta();
+		public static final int AIR = takeNextMeta();
+		public static final int POTION_COLOR = takeNextMeta();
+		public static final int POTION_AMBIENT = takeNextMeta();
+		public static final int UNKNOWN_1 = takeNextMeta(); //10
+		public static final int HURT_TIME = takeNextMeta();
+		public static final int HURT_DIRECTION = takeNextMeta();
+		public static final int PADDLE_TIME_LEFT = takeNextMeta();
+		public static final int PADDLE_TIME_RIGHT = takeNextMeta();
+		public static final int XP_VALUE = takeNextMeta();
+		public static final int MINECART_BLOCK = takeNextMeta(), EATING_HAYSTACK = MINECART_BLOCK, FIREWORK_TYPE = MINECART_BLOCK;
+		public static final int MINECART_OFFSET = takeNextMeta();
+		public static final int MINECART_DISPLAY = takeNextMeta();
+		public static final int UNKNOWN_2 = takeNextMeta();
+		public static final int UNKNOWN_3 = takeNextMeta(); //20
+		public static final int UNKNOWN_4 = takeNextMeta();
+		public static final int UNKNOWN_5 = takeNextMeta();
+		public static final int ENDERMAN_BLOCK = takeNextMeta();
+		public static final int AGE = takeNextMeta();
+		public static final int UNKNOWN_6 = takeNextMeta();
+		public static final int PLAYER_FLAGS = takeNextMeta();
+		public static final int PLAYER_INDEX = takeNextMeta();
+		public static final int COMPASS_LOCATION = takeNextMeta();
+		public static final int FIREBALL_X = takeNextMeta();
+		public static final int FIREBALL_Y = takeNextMeta(); //30
+		public static final int FIREBALL_Z = takeNextMeta();
+		public static final int UNKNOWN_7 = takeNextMeta();
+		public static final int FISHINGFLOAT_X = takeNextMeta();
+		public static final int FISHINGFLOAT_Y = takeNextMeta();
+		public static final int FISHINGFLOAT_Z = takeNextMeta();
+		public static final int POTION_AUX = takeNextMeta();
+		public static final int LEADHOLDER = takeNextMeta();
+		public static final int SCALE = takeNextMeta();
+		public static final int BUTTON_TEXT = takeNextMeta();
+		public static final int NPC_SKIN = takeNextMeta(); //40
+		public static final int BUTTON_URL = takeNextMeta();
+		public static final int MAX_AIR = takeNextMeta();
+		public static final int MARK_VARIANT = takeNextMeta();
+		public static final int HORSE_CONTAINER_TYPE = takeNextMeta();
+		public static final int HORSE_ANIMAL_SLOTS = takeNextMeta();
+		public static final int HORSE_CONTAINER_MULTIPLIER = takeNextMeta();
+		public static final int BLOCK_TARGET = takeNextMeta();
+		public static final int INVULNERABLE_TIME = takeNextMeta();
+		public static final int WITHER_TARGET1 = takeNextMeta();
+		public static final int WITHER_TARGET2 = takeNextMeta(); //50
+		public static final int WITHER_TARGET3 = takeNextMeta();
+		public static final int UNKOWN_8 = takeNextMeta();
+		public static final int BOUNDINGBOX_WIDTH = takeNextMeta();
+		public static final int BOUNDINGBOX_HEIGTH = takeNextMeta();
+		public static final int FUSE_LENGTH = takeNextMeta();
+		public static final int RIDER_POSITION = takeNextMeta();
+		public static final int RIDER_LOCK = takeNextMeta();
+		public static final int RIDER_MAX_ROTATION = takeNextMeta();
+		public static final int RIDER_MIN_ROTATION = takeNextMeta();
+		public static final int AREA_EFFECT_RADIUS = takeNextMeta(); //60
+		public static final int AREA_EFFECT_WAITING = takeNextMeta();
+		public static final int AREA_EFFECT_PARTICLE = takeNextMeta();
+		public static final int SHULKER_HEIGHT = takeNextMeta();
+		public static final int SHULKER_DIRECTION = takeNextMeta();
+		public static final int SHULKER_SOMETHING = takeNextMeta();
+		public static final int SHULKER_ATTACH_POS = takeNextMeta();
+		public static final int TRADING_PLAYER = takeNextMeta();
+		public static final int UNKNOWN_9 = takeNextMeta();
+		public static final int COMMAND_BYTE = takeNextMeta();
+		public static final int COMMAND_COMMAND = takeNextMeta(); //70
+		public static final int COMMAND_LAST_OUTPUT = takeNextMeta();
+		public static final int COMMAND_TRACK_OUTPUT = takeNextMeta();
+		public static final int CONTROLLING_SEAT = takeNextMeta();
+		public static final int STRENGTH = takeNextMeta();
+		public static final int MAX_STRENGTH = takeNextMeta();
+		public static final int UNKNOWN_10 = takeNextMeta();
+		public static final int LIMITED_LIFE = takeNextMeta();
+		public static final int ARMOUR_STAND_POSE = takeNextMeta();
+		public static final int END_CRYSTAL_TIME = takeNextMeta();
+		public static final int ALWAYS_SHOW_NAMETAG = takeNextMeta();
+		public static final int COLOR_2 = takeNextMeta();
+		public static final int UNKNOWN_11 = takeNextMeta();
+		public static final int SCORE = takeNextMeta();
+		public static final int BALLOON_ATTACHED = takeNextMeta();
+		public static final int PUFFERFISH_SIZE = takeNextMeta();
 
 	}
+
 }

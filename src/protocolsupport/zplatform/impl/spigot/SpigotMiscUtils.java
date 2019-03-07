@@ -2,19 +2,24 @@ package protocolsupport.zplatform.impl.spigot;
 
 import java.security.KeyPair;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
+import java.util.stream.Collectors;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.craftbukkit.v1_12_R1.CraftServer;
-import org.bukkit.craftbukkit.v1_12_R1.CraftWorld;
-import org.bukkit.craftbukkit.v1_12_R1.inventory.CraftItemStack;
-import org.bukkit.craftbukkit.v1_12_R1.util.CraftIconCache;
+import org.bukkit.Material;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.craftbukkit.v1_13_R2.CraftServer;
+import org.bukkit.craftbukkit.v1_13_R2.CraftWorld;
+import org.bukkit.craftbukkit.v1_13_R2.block.data.CraftBlockData;
+import org.bukkit.craftbukkit.v1_13_R2.inventory.CraftItemStack;
+import org.bukkit.craftbukkit.v1_13_R2.util.CraftIconCache;
+import org.bukkit.craftbukkit.v1_13_R2.util.CraftMagicNumbers;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.CachedServerIcon;
@@ -23,17 +28,29 @@ import org.spigotmc.SpigotConfig;
 import com.google.common.base.Predicates;
 import com.google.common.collect.Lists;
 import com.mojang.authlib.properties.Property;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufInputStream;
+import io.netty.buffer.ByteBufOutputStream;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
-import net.minecraft.server.v1_12_R1.AxisAlignedBB;
-import net.minecraft.server.v1_12_R1.EntityPlayer;
-import net.minecraft.server.v1_12_R1.EnumProtocol;
-import net.minecraft.server.v1_12_R1.MinecraftServer;
-import net.minecraft.server.v1_12_R1.NBTTagCompound;
-import net.minecraft.server.v1_12_R1.WorldServer;
-import protocolsupport.api.events.PlayerPropertiesResolveEvent.ProfileProperty;
+import net.minecraft.server.v1_13_R2.AxisAlignedBB;
+import net.minecraft.server.v1_13_R2.Block;
+import net.minecraft.server.v1_13_R2.EntityPlayer;
+import net.minecraft.server.v1_13_R2.EntityTypes;
+import net.minecraft.server.v1_13_R2.EnumProtocol;
+import net.minecraft.server.v1_13_R2.IRegistry;
+import net.minecraft.server.v1_13_R2.Item;
+import net.minecraft.server.v1_13_R2.MinecraftServer;
+import net.minecraft.server.v1_13_R2.MojangsonParser;
+import net.minecraft.server.v1_13_R2.NBTCompressedStreamTools;
+import net.minecraft.server.v1_13_R2.NBTReadLimiter;
+import net.minecraft.server.v1_13_R2.NBTTagCompound;
+import net.minecraft.server.v1_13_R2.WorldServer;
 import protocolsupport.api.utils.NetworkState;
+import protocolsupport.protocol.packet.handler.AbstractHandshakeListener;
 import protocolsupport.protocol.pipeline.ChannelHandlers;
 import protocolsupport.protocol.pipeline.IPacketPrepender;
 import protocolsupport.protocol.pipeline.IPacketSplitter;
@@ -41,15 +58,18 @@ import protocolsupport.protocol.pipeline.common.PacketDecrypter;
 import protocolsupport.protocol.pipeline.common.PacketEncrypter;
 import protocolsupport.protocol.utils.MinecraftEncryption;
 import protocolsupport.protocol.utils.authlib.GameProfile;
+import protocolsupport.protocol.utils.types.NetworkItemStack;
+import protocolsupport.protocol.utils.types.nbt.NBTCompound;
+import protocolsupport.protocol.utils.types.nbt.serializer.DefaultNBTSerializer;
 import protocolsupport.zplatform.PlatformUtils;
 import protocolsupport.zplatform.impl.spigot.injector.network.SpigotNettyInjector;
-import protocolsupport.zplatform.impl.spigot.itemstack.SpigotNBTTagCompoundWrapper;
 import protocolsupport.zplatform.impl.spigot.network.SpigotChannelHandlers;
+import protocolsupport.zplatform.impl.spigot.network.handler.SpigotHandshakeListener;
 import protocolsupport.zplatform.impl.spigot.network.pipeline.SpigotPacketCompressor;
 import protocolsupport.zplatform.impl.spigot.network.pipeline.SpigotPacketDecompressor;
 import protocolsupport.zplatform.impl.spigot.network.pipeline.SpigotWrappedPrepender;
 import protocolsupport.zplatform.impl.spigot.network.pipeline.SpigotWrappedSplitter;
-import protocolsupport.zplatform.itemstack.NBTTagCompoundWrapper;
+import protocolsupport.zplatform.network.NetworkManagerWrapper;
 
 public class SpigotMiscUtils implements PlatformUtils {
 
@@ -99,24 +119,93 @@ public class SpigotMiscUtils implements PlatformUtils {
 
 	public static com.mojang.authlib.GameProfile toMojangGameProfile(GameProfile profile) {
 		com.mojang.authlib.GameProfile mojangGameProfile = new com.mojang.authlib.GameProfile(profile.getUUID(), profile.getName());
-		for (Entry<String, ProfileProperty> entry : profile.getProperties().entrySet()) {
-			ProfileProperty property = entry.getValue();
-			mojangGameProfile.getProperties().put(entry.getKey(), new Property(property.getName(), property.getValue(), property.getSignature()));
-		}
+		com.mojang.authlib.properties.PropertyMap mojangProperties = mojangGameProfile.getProperties();
+		profile.getProperties().entrySet().forEach(entry -> mojangProperties.putAll(
+			entry.getKey(),
+			entry.getValue().stream()
+			.map(p -> new Property(p.getName(), p.getValue(), p.getSignature()))
+			.collect(Collectors.toList()))
+		);
 		return mojangGameProfile;
 	}
 
 	@Override
-	public ItemStack createItemStackFromNBTTag(NBTTagCompoundWrapper tag) {
-		return CraftItemStack.asCraftMirror(new net.minecraft.server.v1_12_R1.ItemStack(((SpigotNBTTagCompoundWrapper) tag).unwrap()));
+	public AbstractHandshakeListener createHandshakeListener(NetworkManagerWrapper networkmanager) {
+		return new SpigotHandshakeListener(networkmanager);
+	}
+
+	@SuppressWarnings("deprecation")
+	@Override
+	public int getMobTypeNetworkId(EntityType type) {
+		return IRegistry.ENTITY_TYPE.a(EntityTypes.a(type.getName()));
 	}
 
 	@Override
-	public NBTTagCompoundWrapper createNBTTagFromItemStack(ItemStack itemstack) {
-		net.minecraft.server.v1_12_R1.ItemStack nmsitemstack = CraftItemStack.asNMSCopy(itemstack);
+	public int getItemNetworkId(Material material) {
+		Item item = CraftMagicNumbers.getItem(material);
+		return item != null ? Item.getId(item) : -1;
+	}
+
+	@Override
+	public int getBlockDataNetworkId(BlockData blockdata) {
+		return Block.getCombinedId(((CraftBlockData) blockdata).getState());
+	}
+
+	@Override
+	public int getBlockNetworkId(Material material) {
+		return IRegistry.BLOCK.a(CraftMagicNumbers.getBlock(material));
+	}
+
+	@Override
+	public BlockData getBlockDataByNetworkId(int id) {
+		return CraftBlockData.fromData(Block.getByCombinedId(id));
+	}
+
+	@Override
+	public Material getBlockByNetworkId(int id) {
+		return CraftMagicNumbers.getMaterial(IRegistry.BLOCK.fromId(id));
+	}
+
+	@Override
+	public List<BlockData> getBlockDataList(Material material) {
+		return
+			CraftMagicNumbers.getBlock(material).getStates().a().stream()
+			.map(CraftBlockData::fromData)
+			.collect(Collectors.toList());
+	}
+
+	@Override
+	public ItemStack createItemStackFromNetwork(NetworkItemStack stack) {
+		net.minecraft.server.v1_13_R2.ItemStack nmsitemstack = new net.minecraft.server.v1_13_R2.ItemStack(Item.getById(stack.getTypeId()), stack.getAmount());
+		NBTCompound rootTag = stack.getNBT();
+		if (rootTag != null) {
+			//TODO: a faster way to do that
+			ByteBuf buffer = Unpooled.buffer();
+			try {
+				DefaultNBTSerializer.INSTANCE.serializeTag(new ByteBufOutputStream(buffer), rootTag);
+				nmsitemstack.setTag(NBTCompressedStreamTools.a(new ByteBufInputStream(buffer), NBTReadLimiter.a));
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}
+		return CraftItemStack.asCraftMirror(nmsitemstack);
+	}
+
+	@Override
+	public ItemStack deserializeItemStackFromNBTJson(String json) {
+		try {
+			return CraftItemStack.asCraftMirror(net.minecraft.server.v1_13_R2.ItemStack.a(MojangsonParser.parse(json)));
+		} catch (CommandSyntaxException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	@Override
+	public String serializeItemStackToNBTJson(ItemStack itemstack) {
+		net.minecraft.server.v1_13_R2.ItemStack nmsitemstack = CraftItemStack.asNMSCopy(itemstack);
 		NBTTagCompound compound = new NBTTagCompound();
 		nmsitemstack.save(compound);
-		return SpigotNBTTagCompoundWrapper.wrap(compound);
+		return compound.toString();
 	}
 
 	@Override
@@ -135,6 +224,11 @@ public class SpigotMiscUtils implements PlatformUtils {
 	}
 
 	@Override
+	public String getOutdatedClientMessage() {
+		return SpigotConfig.outdatedClientMessage;
+	}
+
+	@Override
 	public boolean isRunning() {
 		return getServer().isRunning();
 	}
@@ -146,7 +240,7 @@ public class SpigotMiscUtils implements PlatformUtils {
 
 	@Override
 	public boolean isProxyPreventionEnabled() {
-		return getServer().ac();
+		return getServer().S();
 	}
 
 	@Override
@@ -166,12 +260,12 @@ public class SpigotMiscUtils implements PlatformUtils {
 
 	@Override
 	public int getCompressionThreshold() {
-		return getServer().aG();
+		return getServer().aw();
 	}
 
 	@Override
 	public KeyPair getEncryptionKeyPair() {
-		return getServer().O();
+		return getServer().E();
 	}
 
 	@Override

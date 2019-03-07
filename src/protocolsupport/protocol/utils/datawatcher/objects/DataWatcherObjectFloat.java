@@ -2,8 +2,9 @@ package protocolsupport.protocol.utils.datawatcher.objects;
 
 import io.netty.buffer.ByteBuf;
 import protocolsupport.api.ProtocolVersion;
+import protocolsupport.protocol.utils.datawatcher.ReadableDataWatcherObject;
 
-public class DataWatcherObjectFloat extends ReadableDataWatcherObjectNumber<Float> {
+public class DataWatcherObjectFloat extends ReadableDataWatcherObject<Float> {
 
 	public DataWatcherObjectFloat() {
 	}
@@ -13,7 +14,7 @@ public class DataWatcherObjectFloat extends ReadableDataWatcherObjectNumber<Floa
 	}
 
 	@Override
-	public void readFromStream(ByteBuf from, ProtocolVersion version, String locale) {
+	public void readFromStream(ByteBuf from) {
 		value = from.readFloat();
 	}
 

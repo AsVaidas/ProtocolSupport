@@ -1,16 +1,20 @@
 package protocolsupport.protocol.packet.middle.serverbound.play;
 
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.ServerBoundPacket;
 import protocolsupport.protocol.packet.middle.ServerBoundMiddlePacket;
 import protocolsupport.protocol.packet.middleimpl.ServerBoundPacketData;
 import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.StringSerializer;
 import protocolsupport.protocol.utils.EnumConstantLookups;
-import protocolsupport.protocol.utils.ProtocolVersionsHelper;
 import protocolsupport.utils.recyclable.RecyclableCollection;
 import protocolsupport.utils.recyclable.RecyclableSingletonList;
 
 public abstract class MiddleAdvancementTab extends ServerBoundMiddlePacket {
+
+	public MiddleAdvancementTab(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected Action action;
 	protected String identifier;
@@ -20,7 +24,7 @@ public abstract class MiddleAdvancementTab extends ServerBoundMiddlePacket {
 		ServerBoundPacketData creator = ServerBoundPacketData.create(ServerBoundPacket.PLAY_ADVANCEMENT_TAB);
 		MiscSerializer.writeVarIntEnum(creator, action);
 		if (action == Action.OPEN) {
-			StringSerializer.writeString(creator, ProtocolVersionsHelper.LATEST_PC, identifier);
+			StringSerializer.writeVarIntUTF8String(creator, identifier);
 		}
 		return RecyclableSingletonList.create(creator);
 	}

@@ -4,16 +4,20 @@ import io.netty.buffer.ByteBuf;
 import protocolsupport.api.chat.ChatAPI;
 import protocolsupport.api.chat.components.BaseComponent;
 import protocolsupport.api.utils.Any;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.ClientBoundMiddlePacket;
 import protocolsupport.protocol.serializer.ArraySerializer;
 import protocolsupport.protocol.serializer.ItemStackSerializer;
 import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.StringSerializer;
 import protocolsupport.protocol.utils.EnumConstantLookups;
-import protocolsupport.protocol.utils.ProtocolVersionsHelper;
-import protocolsupport.zplatform.itemstack.ItemStackWrapper;
+import protocolsupport.protocol.utils.types.NetworkItemStack;
 
 public abstract class MiddleAdvancements extends ClientBoundMiddlePacket {
+
+	public MiddleAdvancements(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected boolean reset;
 	protected Any<String, Advancement>[] advancementsMapping;
@@ -26,33 +30,33 @@ public abstract class MiddleAdvancements extends ClientBoundMiddlePacket {
 		reset = serverdata.readBoolean();
 		advancementsMapping = ArraySerializer.readVarIntTArray(
 			serverdata, Any.class,
-			buf -> new Any<String, Advancement>(StringSerializer.readString(buf, ProtocolVersionsHelper.LATEST_PC), Advancement.read(buf, cache.getLocale()))
+			buf -> new Any<>(StringSerializer.readVarIntUTF8String(buf), Advancement.read(buf))
 		);
-		removeAdvancements = ArraySerializer.readVarIntStringArray(serverdata, ProtocolVersionsHelper.LATEST_PC);
+		removeAdvancements = ArraySerializer.readVarIntVarIntUTF8StringArray(serverdata);
 		advancementsProgress = ArraySerializer.readVarIntTArray(
 			serverdata, Any.class,
-			buf -> new Any<String, AdvancementProgress>(StringSerializer.readString(buf, ProtocolVersionsHelper.LATEST_PC), AdvancementProgress.read(buf))
+			buf -> new Any<>(StringSerializer.readVarIntUTF8String(buf), AdvancementProgress.read(buf))
 		);
 	}
 
 	protected static class Advancement {
 
-		protected static Advancement read(ByteBuf from, String locale) {
-			String parentId = from.readBoolean() ? StringSerializer.readString(from, ProtocolVersionsHelper.LATEST_PC) : null;
-			AdvancementDisplay display = from.readBoolean() ? AdvancementDisplay.read(from, locale) : null;
-			String[] criterias = ArraySerializer.readVarIntStringArray(from, ProtocolVersionsHelper.LATEST_PC);
-			String[][] requirments = ArraySerializer.readVarIntTArray(from, String[].class, buf -> ArraySerializer.readVarIntStringArray(buf, ProtocolVersionsHelper.LATEST_PC));
+		protected static Advancement read(ByteBuf from) {
+			String parentId = from.readBoolean() ? StringSerializer.readVarIntUTF8String(from) : null;
+			AdvancementDisplay display = from.readBoolean() ? AdvancementDisplay.read(from) : null;
+			String[] criterias = ArraySerializer.readVarIntVarIntUTF8StringArray(from);
+			String[][] requirments = ArraySerializer.readVarIntTArray(from, String[].class, ArraySerializer::readVarIntVarIntUTF8StringArray);
 			return new Advancement(parentId, display, criterias, requirments);
 		}
 
 		public final String parentId;
 		public final AdvancementDisplay display;
-		public final String[] criterias;
+		public final String[] criteria;
 		public final String[][] requirements;
 		public Advancement(String parentId, AdvancementDisplay display, String[] criterias, String[][] requirments) {
 			this.parentId = parentId;
 			this.display = display;
-			this.criterias = criterias;
+			this.criteria = criterias;
 			this.requirements = requirments;
 		}
 	}
@@ -61,13 +65,13 @@ public abstract class MiddleAdvancements extends ClientBoundMiddlePacket {
 
 		public static final int flagHasBackgroundOffset = 0x1;
 
-		protected static AdvancementDisplay read(ByteBuf from, String locale) {
-			BaseComponent title = ChatAPI.fromJSON(StringSerializer.readString(from, ProtocolVersionsHelper.LATEST_PC));
-			BaseComponent description = ChatAPI.fromJSON(StringSerializer.readString(from, ProtocolVersionsHelper.LATEST_PC));
-			ItemStackWrapper icon = ItemStackSerializer.readItemStack(from, ProtocolVersionsHelper.LATEST_PC, locale, false);
+		protected static AdvancementDisplay read(ByteBuf from) {
+			BaseComponent title = ChatAPI.fromJSON(StringSerializer.readVarIntUTF8String(from));
+			BaseComponent description = ChatAPI.fromJSON(StringSerializer.readVarIntUTF8String(from));
+			NetworkItemStack icon = ItemStackSerializer.readItemStack(from);
 			FrameType type = MiscSerializer.readVarIntEnum(from, FrameType.CONSTANT_LOOKUP);
 			int flags = from.readInt();
-			String background = (flags & flagHasBackgroundOffset) != 0 ? StringSerializer.readString(from, ProtocolVersionsHelper.LATEST_PC) : null;
+			String background = (flags & flagHasBackgroundOffset) != 0 ? StringSerializer.readVarIntUTF8String(from) : null;
 			float x = from.readFloat();
 			float y = from.readFloat();
 			return new AdvancementDisplay(title, description, icon, type, flags, background, x, y);
@@ -75,13 +79,13 @@ public abstract class MiddleAdvancements extends ClientBoundMiddlePacket {
 
 		public final BaseComponent title;
 		public final BaseComponent description;
-		public final ItemStackWrapper icon;
+		public final NetworkItemStack icon;
 		public final FrameType frametype;
 		public final int flags;
 		public final String background;
 		public final float x;
 		public final float y;
-		public AdvancementDisplay(BaseComponent title, BaseComponent description, ItemStackWrapper icon, FrameType frametype, int flags, String background, float x, float y) {
+		public AdvancementDisplay(BaseComponent title, BaseComponent description, NetworkItemStack icon, FrameType frametype, int flags, String background, float x, float y) {
 			this.title = title;
 			this.description = description;
 			this.icon = icon;
@@ -104,7 +108,7 @@ public abstract class MiddleAdvancements extends ClientBoundMiddlePacket {
 		protected static AdvancementProgress read(ByteBuf from) {
 			return new AdvancementProgress(ArraySerializer.readVarIntTArray(
 				from, Any.class,
-				buf -> new Any<String, Long>(StringSerializer.readString(from, ProtocolVersionsHelper.LATEST_PC), buf.readBoolean() ? buf.readLong() : null)
+				buf -> new Any<>(StringSerializer.readVarIntUTF8String(from), buf.readBoolean() ? buf.readLong() : null)
 			));
 		}
 

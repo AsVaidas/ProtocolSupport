@@ -1,6 +1,7 @@
 package protocolsupport.protocol.packet.middleimpl.clientbound.play.v_pe;
 
-import gnu.trove.map.hash.TIntObjectHashMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.clientbound.play.MiddleBlockBreakAnimation;
 import protocolsupport.protocol.packet.middleimpl.ClientBoundPacketData;
 import protocolsupport.protocol.typeremapper.pe.PELevelEvent;
@@ -10,7 +11,11 @@ import protocolsupport.utils.recyclable.RecyclableSingletonList;
 
 public class BlockBreakAnimation extends MiddleBlockBreakAnimation {
 
-	private final TIntObjectHashMap<TimePle> animations = new TIntObjectHashMap<>();
+	public BlockBreakAnimation(ConnectionImpl connection) {
+		super(connection);
+	}
+
+	protected final Int2ObjectOpenHashMap<TimePle> animations = new Int2ObjectOpenHashMap<>();
 
 	@Override
 	public RecyclableCollection<ClientBoundPacketData> toData() {
@@ -34,7 +39,7 @@ public class BlockBreakAnimation extends MiddleBlockBreakAnimation {
 	}
 
 	//Tuple for AnimationTime.
-	private class TimePle {
+	protected static class TimePle {
 
 		private boolean started;
 		private final long starttime;

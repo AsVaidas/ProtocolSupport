@@ -1,9 +1,9 @@
 package protocolsupport.protocol.packet.middleimpl.clientbound.play.v_pe;
 
 import protocolsupport.api.ProtocolVersion;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.clientbound.play.MiddleExplosion;
 import protocolsupport.protocol.packet.middleimpl.ClientBoundPacketData;
-import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.VarNumberSerializer;
 import protocolsupport.protocol.typeremapper.pe.PELevelEvent;
 import protocolsupport.protocol.typeremapper.pe.PEPacketIDs;
@@ -13,23 +13,26 @@ import protocolsupport.utils.recyclable.RecyclableCollection;
 
 public class Explosion extends MiddleExplosion {
 
+	public Explosion(ConnectionImpl connection) {
+		super(connection);
+	}
+
 	@Override
 	public RecyclableCollection<ClientBoundPacketData> toData() {
 		ProtocolVersion version = connection.getVersion();
 		RecyclableArrayList<ClientBoundPacketData> packets = RecyclableArrayList.create();
-		packets.add(create(version, x, y , z, radius, blocks));
-		packets.add(EntityVelocity.create(version, cache.getSelfPlayerEntityId(), pMotX, pMotY, pMotZ));
+		packets.add(create(x, y, z, radius, blocks));
+		packets.add(EntityVelocity.create(cache.getWatchedEntityCache().getSelfPlayerEntityId(), pMotX, pMotY, pMotZ));
 		packets.add(WorldParticle.create(PELevelEvent.PARTICLE_HUGE_EXPLOSION_SEED, x, y, z));
 		return packets;
 	}
 
-	//TODO: Send chuck again. It seems too many updates make chunks disappear or something..
-	public static ClientBoundPacketData create(ProtocolVersion version, float x, float y, float z, float radius, Position[] blocks) {
-		ClientBoundPacketData serializer = ClientBoundPacketData.create(PEPacketIDs.EXPLODE, version);
-		MiscSerializer.writeLFloat(serializer, x);
-		MiscSerializer.writeLFloat(serializer, y);
-		MiscSerializer.writeLFloat(serializer, z);
-		MiscSerializer.writeLFloat(serializer, radius * 100);
+	public static ClientBoundPacketData create(float x, float y, float z, float radius, Position[] blocks) {
+		ClientBoundPacketData serializer = ClientBoundPacketData.create(PEPacketIDs.EXPLODE);
+		serializer.writeFloatLE(x);
+		serializer.writeFloatLE(y);
+		serializer.writeFloatLE(z);
+		serializer.writeFloatLE(radius * 100);
 		VarNumberSerializer.writeVarInt(serializer, blocks.length);
 		for (Position b : blocks) {
 			VarNumberSerializer.writeSVarInt(serializer, b.getX());
@@ -38,6 +41,5 @@ public class Explosion extends MiddleExplosion {
 		}
 		return serializer;
 	}
-
 
 }

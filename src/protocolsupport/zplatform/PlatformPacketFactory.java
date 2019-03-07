@@ -3,6 +3,8 @@ package protocolsupport.zplatform;
 import java.security.PublicKey;
 import java.util.List;
 
+import io.netty.buffer.ByteBuf;
+import org.bukkit.Chunk;
 import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 
@@ -17,7 +19,15 @@ public interface PlatformPacketFactory {
 
 	public Object createInboundInventoryClosePacket();
 
+	public Object createInboundInventoryConfirmTransactionPacket(int windowId, int actionNumber, boolean accepted);
+
+	public Object createInboundPluginMessagePacket(String tag, byte[] data);
+
+	public Object createInboundCustomPayloadPacket(String tag, byte[] data);
+
 	public Object createOutboundChatPacket(String message, int position);
+
+	public Object createOutboundUpdateChunkPacket(Chunk chunk);
 
 	public Object createTabHeaderFooterPacket(BaseComponent header, BaseComponent footer);
 
@@ -49,9 +59,15 @@ public interface PlatformPacketFactory {
 
 	public Object createEmptyCustomPayloadPacket(String tag);
 
+	public Object createOutboundPluginMessagePacket(String tag, ByteBuf data);
+
 	public Object createFakeJoinGamePacket();
 
 	public Object createEntityStatusPacket(Entity entity, int status);
+
+	public Object createUpdateChunkPacket(Chunk chunk);
+
+	public Object createBlockUpdatePacket(Position pos, int block);
 
 
 	public int getOutLoginDisconnectPacketId();
@@ -61,6 +77,8 @@ public interface PlatformPacketFactory {
 	public int getOutLoginSuccessPacketId();
 
 	public int getOutLoginSetCompressionPacketId();
+
+	public int getOutLoginCustomPayloadPacketId();
 
 	public int getOutStatusServerInfoPacketId();
 
@@ -224,7 +242,19 @@ public interface PlatformPacketFactory {
 
 	public int getOutPlayAdvancementsTabPacketId();
 
-	public int getOutPlayCraftingGridConfirmPacketId();
+	public int getOutPlayCraftRecipeConfirmPacketId();
+
+	public int getOutPlayDeclareCommandsPacketId();
+
+	public int getOutPlayDeclareRecipesPacketId();
+
+	public int getOutPlayDeclareTagsPacket();
+
+	public int getOutPlayQueryNBTResponsePacketId();
+
+	public int getOutPlayStopSoundPacketId();
+
+	public int getOutPlayLookAtPacketId();
 
 
 	public int getInHandshakeStartPacketId();
@@ -236,6 +266,8 @@ public interface PlatformPacketFactory {
 	public int getInLoginStartPacketId();
 
 	public int getInLoginEncryptionBeginPacketId();
+
+	public int getInLoginCustomPayloadPacketId();
 
 	public int getInPlayKeepAlivePacketId();
 
@@ -297,10 +329,30 @@ public interface PlatformPacketFactory {
 
 	public int getInPlayTeleportAcceptPacketId();
 
-	public int getInPlayCraftingBookPacketId();
+	public int getInPlayRecipeBookDataPacketId();
 
-	public int getInPlayPrepareCraftingGridPacketId();
+	public int getInPlayCraftRecipeRequestPacketId();
 
 	public int getInPlayAdvancementTabPacketId();
+
+	public int getInPlayQueryBlockNBTPacketId();
+
+	public int getInPlayQueryEntityNBTPacketId();
+
+	public int getInPlayEditBookPacketId();
+
+	public int getInPlayPickItemPacketId();
+
+	public int getInPlayNameItemPacketId();
+
+	public int getInPlaySelectTradePacketId();
+
+	public int getInPlaySetBeaconEffectPacketId();
+
+	public int getInPlayUpdateCommandBlockPacketId();
+
+	public int getInPlayUpdateCommandMinecartPacketId();
+
+	public int getInPlayUpdateStructureBlockPacketId();
 
 }

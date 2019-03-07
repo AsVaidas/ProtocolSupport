@@ -1,15 +1,23 @@
 package protocolsupport.protocol.packet.middleimpl.clientbound.play.v_pe;
 
-import gnu.trove.map.hash.TIntIntHashMap;
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.clientbound.play.MiddleWorldEvent;
 import protocolsupport.protocol.packet.middleimpl.ClientBoundPacketData;
+import protocolsupport.protocol.typeremapper.pe.PEBlocks;
 import protocolsupport.protocol.typeremapper.pe.PELevelEvent;
+import protocolsupport.protocol.typeremapper.pe.PESoundLevelEvent;
 import protocolsupport.utils.recyclable.RecyclableCollection;
 import protocolsupport.utils.recyclable.RecyclableSingletonList;
 
 public class WorldEvent extends MiddleWorldEvent {
 
-	private static final TIntIntHashMap remaps = new TIntIntHashMap();
+	public WorldEvent(ConnectionImpl connection) {
+		super(connection);
+	}
+
+	private static final Int2IntOpenHashMap remaps = new Int2IntOpenHashMap();
+
 	static {
 		remaps.put(1000, PELevelEvent.SOUND_CLICK);
 		remaps.put(1001, PELevelEvent.SOUND_CLICK_FAIL);
@@ -62,6 +70,24 @@ public class WorldEvent extends MiddleWorldEvent {
 
 	@Override
 	public RecyclableCollection<ClientBoundPacketData> toData() {
+		switch (effectId) { // SPECIAL CASES
+			case 1010: { // Records
+				// To make the code a bit simplier, we are going to just get the event ID from the record ID
+				// first record ID: 774 (13)
+				// first sound level event ID: 101 (13)
+				// diff = 673
+				int soundLevelId = data - 673;
+				// If the soundLevelId != any Minecraft record, the song will stop
+				if (data != 0) { // The vanilla server uses 0 as the "please stop this song" data
+					return RecyclableSingletonList.create(PESoundLevelEvent.createPacket(soundLevelId, position));
+				} else { // If else, stop the record by sending the STOP_RECORD sound event
+					return RecyclableSingletonList.create(PESoundLevelEvent.createPacket(PESoundLevelEvent.STOP_RECORD, position));
+				}
+			}
+			case 2001: { // Break block
+				data = PEBlocks.getPocketRuntimeId(data);
+			}
+		}
 		return RecyclableSingletonList.create(PELevelEvent.createPacket(remaps.get(effectId), position.getX(), position.getY(), position.getZ(), data));
 	}
 

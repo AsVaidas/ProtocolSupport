@@ -3,26 +3,32 @@ package protocolsupport.protocol.packet.middle.clientbound.play;
 import java.util.UUID;
 
 import io.netty.buffer.ByteBuf;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.ClientBoundMiddlePacket;
 import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.VarNumberSerializer;
-import protocolsupport.protocol.typeremapper.id.IdSkipper;
-import protocolsupport.protocol.typeremapper.watchedentity.DataWatcherDataRemapper;
-import protocolsupport.protocol.utils.types.NetworkEntity;
+import protocolsupport.protocol.typeremapper.basic.GenericIdSkipper;
+import protocolsupport.protocol.typeremapper.entity.EntityRemapper;
+import protocolsupport.protocol.utils.networkentity.NetworkEntity;
 
 public abstract class MiddleSpawnLiving extends ClientBoundMiddlePacket {
+
+	protected final EntityRemapper entityRemapper = new EntityRemapper(version);
+
+	public MiddleSpawnLiving(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected NetworkEntity entity;
 	protected double x;
 	protected double y;
 	protected double z;
-	protected int yaw;
-	protected int pitch;
-	protected int headPitch;
+	protected byte yaw;
+	protected byte pitch;
+	protected byte headYaw;
 	protected int motX;
 	protected int motY;
 	protected int motZ;
-	protected DataWatcherDataRemapper metadata = new DataWatcherDataRemapper();
 
 	@Override
 	public void readFromServerData(ByteBuf serverdata) {
@@ -33,19 +39,24 @@ public abstract class MiddleSpawnLiving extends ClientBoundMiddlePacket {
 		x = serverdata.readDouble();
 		y = serverdata.readDouble();
 		z = serverdata.readDouble();
-		yaw = serverdata.readUnsignedByte();
-		pitch = serverdata.readUnsignedByte();
-		headPitch = serverdata.readUnsignedByte();
+		yaw = serverdata.readByte();
+		pitch = serverdata.readByte();
+		headYaw = serverdata.readByte();
 		motX = serverdata.readShort();
 		motY = serverdata.readShort();
 		motZ = serverdata.readShort();
-		metadata.init(serverdata, connection.getVersion(), cache.getLocale(), entity);
+		entityRemapper.readEntityWithMetadata(entity, serverdata);
 	}
 
 	@Override
 	public boolean postFromServerRead() {
-		cache.addWatchedEntity(entity);
-		return !IdSkipper.ENTITY.getTable(connection.getVersion()).shouldSkip(entity.getType());
+		if (!GenericIdSkipper.ENTITY.getTable(version).shouldSkip(entity.getType())) {
+			cache.getWatchedEntityCache().addWatchedEntity(entity);
+			entityRemapper.remap(true);
+			return true;
+		} else {
+			return false;
+		}
 	}
 
 }

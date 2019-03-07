@@ -1,11 +1,16 @@
 package protocolsupport.protocol.packet.middle.clientbound.play;
 
 import io.netty.buffer.ByteBuf;
+import protocolsupport.protocol.ConnectionImpl;
 
 public abstract class MiddleEntityLook extends MiddleEntity {
 
-	protected int yaw;
-	protected int pitch;
+	public MiddleEntityLook(ConnectionImpl connection) {
+		super(connection);
+	}
+
+	protected byte yaw;
+	protected byte pitch;
 	protected boolean onGround;
 
 	@Override

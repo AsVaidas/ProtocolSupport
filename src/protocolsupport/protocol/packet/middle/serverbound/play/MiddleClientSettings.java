@@ -2,17 +2,21 @@ package protocolsupport.protocol.packet.middle.serverbound.play;
 
 import org.bukkit.inventory.MainHand;
 
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.ServerBoundPacket;
 import protocolsupport.protocol.packet.middle.ServerBoundMiddlePacket;
 import protocolsupport.protocol.packet.middleimpl.ServerBoundPacketData;
 import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.StringSerializer;
 import protocolsupport.protocol.utils.EnumConstantLookups;
-import protocolsupport.protocol.utils.ProtocolVersionsHelper;
 import protocolsupport.utils.recyclable.RecyclableCollection;
 import protocolsupport.utils.recyclable.RecyclableSingletonList;
 
 public abstract class MiddleClientSettings extends ServerBoundMiddlePacket {
+
+	public MiddleClientSettings(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected String locale;
 	protected int viewDist;
@@ -23,13 +27,13 @@ public abstract class MiddleClientSettings extends ServerBoundMiddlePacket {
 
 	@Override
 	public RecyclableCollection<ServerBoundPacketData> toNative() {
-		cache.setLocale(locale);
+		cache.getAttributesCache().setLocale(locale);
 		return RecyclableSingletonList.create(create(locale, viewDist, chatMode, chatColors, skinFlags, mainHand));
 	}
 
 	public static ServerBoundPacketData create(String locale, int viewDist, ChatMode chatMode, boolean chatColors, int skinFlags, MainHand mainHand) {
 		ServerBoundPacketData creator = ServerBoundPacketData.create(ServerBoundPacket.PLAY_SETTINGS);
-		StringSerializer.writeString(creator, ProtocolVersionsHelper.LATEST_PC, locale);
+		StringSerializer.writeVarIntUTF8String(creator, locale);
 		creator.writeByte(viewDist);
 		MiscSerializer.writeVarIntEnum(creator, chatMode);
 		creator.writeBoolean(chatColors);

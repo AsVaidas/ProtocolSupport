@@ -3,29 +3,40 @@ package protocolsupport.protocol.packet.middle.clientbound.play;
 import java.util.UUID;
 
 import io.netty.buffer.ByteBuf;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.ClientBoundMiddlePacket;
 import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.PositionSerializer;
-import protocolsupport.protocol.serializer.StringSerializer;
 import protocolsupport.protocol.serializer.VarNumberSerializer;
-import protocolsupport.protocol.utils.ProtocolVersionsHelper;
+import protocolsupport.protocol.utils.networkentity.NetworkEntity;
+import protocolsupport.protocol.utils.networkentity.NetworkEntityType;
 import protocolsupport.protocol.utils.types.Position;
 
 public abstract class MiddleSpawnPainting extends ClientBoundMiddlePacket {
 
-	protected int entityId;
-	protected UUID uuid;
-	protected String type;
-	protected Position position = new Position(0, 0, 0);
+	public MiddleSpawnPainting(ConnectionImpl connection) {
+		super(connection);
+	}
+
+	protected NetworkEntity entity;
+	protected int type;
+	protected final Position position = new Position(0, 0, 0);
 	protected int direction;
 
 	@Override
 	public void readFromServerData(ByteBuf serverdata) {
-		entityId = VarNumberSerializer.readVarInt(serverdata);
-		uuid = MiscSerializer.readUUID(serverdata);
-		type = StringSerializer.readString(serverdata, ProtocolVersionsHelper.LATEST_PC, 13);
+		int entityId = VarNumberSerializer.readVarInt(serverdata);
+		UUID uuid = MiscSerializer.readUUID(serverdata);
+		entity = new NetworkEntity(uuid, entityId, NetworkEntityType.PAINTING);
+		type = VarNumberSerializer.readVarInt(serverdata);
 		PositionSerializer.readPositionTo(serverdata, position);
 		direction = serverdata.readUnsignedByte();
+	}
+
+	@Override
+	public boolean postFromServerRead() {
+		cache.getWatchedEntityCache().addWatchedEntity(entity);
+		return true;
 	}
 
 }

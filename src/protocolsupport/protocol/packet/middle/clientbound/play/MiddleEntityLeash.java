@@ -1,10 +1,15 @@
 package protocolsupport.protocol.packet.middle.clientbound.play;
 
 import io.netty.buffer.ByteBuf;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.ClientBoundMiddlePacket;
-import protocolsupport.protocol.utils.types.NetworkEntity;
+import protocolsupport.protocol.utils.networkentity.NetworkEntity;
 
 public abstract class MiddleEntityLeash extends ClientBoundMiddlePacket {
+
+	public MiddleEntityLeash(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected int entityId;
 	protected int vehicleId;
@@ -17,9 +22,9 @@ public abstract class MiddleEntityLeash extends ClientBoundMiddlePacket {
 
 	@Override
 	public boolean postFromServerRead() {
-		NetworkEntity entity = cache.getWatchedEntity(entityId);
+		NetworkEntity entity = cache.getWatchedEntityCache().getWatchedEntity(entityId);
 		if (entity != null) {
-			entity.getDataCache().attachedId = vehicleId;
+			entity.getDataCache().setAttachedId(vehicleId);
 		}
 		return true;
 	}

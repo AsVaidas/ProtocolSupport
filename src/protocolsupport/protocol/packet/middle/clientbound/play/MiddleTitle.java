@@ -7,14 +7,18 @@ import protocolsupport.api.chat.ChatAPI;
 import protocolsupport.api.chat.ChatAPI.MessagePosition;
 import protocolsupport.api.chat.components.BaseComponent;
 import protocolsupport.api.chat.components.TextComponent;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.ClientBoundMiddlePacket;
 import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.StringSerializer;
 import protocolsupport.protocol.utils.EnumConstantLookups;
-import protocolsupport.protocol.utils.ProtocolVersionsHelper;
 import protocolsupport.zplatform.ServerPlatform;
 
 public abstract class MiddleTitle extends ClientBoundMiddlePacket {
+
+	public MiddleTitle(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected Action action;
 	protected BaseComponent message;
@@ -29,7 +33,7 @@ public abstract class MiddleTitle extends ClientBoundMiddlePacket {
 			case SET_TITLE:
 			case SET_SUBTITLE:
 			case SET_ACTION_BAR: {
-				message = ChatAPI.fromJSON(StringSerializer.readString(serverdata, ProtocolVersionsHelper.LATEST_PC));
+				message = ChatAPI.fromJSON(StringSerializer.readVarIntUTF8String(serverdata));
 				break;
 			}
 			case SET_TIMES: {
@@ -49,11 +53,11 @@ public abstract class MiddleTitle extends ClientBoundMiddlePacket {
 	public boolean postFromServerRead() {
 		if (
 			(action == Action.SET_ACTION_BAR) &&
-			(connection.getVersion().getProtocolType() == ProtocolType.PC) &&
-			connection.getVersion().isBefore(ProtocolVersion.MINECRAFT_1_11)
+			(version.getProtocolType() == ProtocolType.PC) &&
+			version.isBefore(ProtocolVersion.MINECRAFT_1_11)
 		) {
 			connection.sendPacket(ServerPlatform.get().getPacketFactory().createOutboundChatPacket(
-				ChatAPI.toJSON(new TextComponent(message.toLegacyText(cache.getLocale()))),
+				ChatAPI.toJSON(new TextComponent(message.toLegacyText(cache.getAttributesCache().getLocale()))),
 				MessagePosition.HOTBAR.ordinal()
 			));
 			return false;

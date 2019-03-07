@@ -1,20 +1,21 @@
 package protocolsupport.api.chat.modifiers;
 
+import java.io.IOException;
 import java.util.UUID;
 
-import org.bukkit.Achievement;
-import org.bukkit.Statistic;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.inventory.ItemStack;
 
 import protocolsupport.api.chat.ChatAPI;
 import protocolsupport.api.chat.components.BaseComponent;
-import protocolsupport.api.chat.components.TextComponent;
-import protocolsupport.api.utils.Any;
+import protocolsupport.protocol.utils.types.nbt.NBTCompound;
+import protocolsupport.protocol.utils.types.nbt.NBTString;
+import protocolsupport.protocol.utils.types.nbt.NBTType;
+import protocolsupport.protocol.utils.types.nbt.mojangson.MojangsonParser;
+import protocolsupport.protocol.utils.types.nbt.mojangson.MojangsonSerializer;
 import protocolsupport.utils.Utils;
 import protocolsupport.zplatform.ServerPlatform;
-import protocolsupport.zplatform.itemstack.NBTTagCompoundWrapper;
 
 @SuppressWarnings("deprecation")
 public class HoverAction {
@@ -34,7 +35,7 @@ public class HoverAction {
 
 	public HoverAction(ItemStack itemstack) {
 		this.type = Type.SHOW_ITEM;
-		this.value = ServerPlatform.get().getMiscUtils().createNBTTagFromItemStack(itemstack).toString();
+		this.value = ServerPlatform.get().getMiscUtils().serializeItemStackToNBTJson(itemstack);
 	}
 
 	public HoverAction(Entity entity) {
@@ -43,23 +44,20 @@ public class HoverAction {
 
 	public HoverAction(EntityInfo entityinfo) {
 		this.type = Type.SHOW_ENTITY;
-		NBTTagCompoundWrapper compound = ServerPlatform.get().getWrapperFactory().createEmptyNBTCompound();
-		compound.setString("type", entityinfo.getType().getName());
-		compound.setString("id", entityinfo.getUUID().toString());
-		compound.setString("name", entityinfo.getName());
-		this.value = compound.toString();
-	}
-
-	@Deprecated
-	public HoverAction(Achievement achievment) {
-		this.type = Type.SHOW_TEXT;
-		this.value = ChatAPI.toJSON(new TextComponent("Achievement hover component is no longer supported"));
-	}
-
-	@Deprecated
-	public HoverAction(Statistic stat) {
-		this.type = Type.SHOW_TEXT;
-		this.value = ChatAPI.toJSON(new TextComponent("Statistic hover component is no longer supported"));
+		NBTCompound compound = new NBTCompound();
+		EntityType etype = entityinfo.getType();
+		UUID euuid = entityinfo.getUUID();
+		String ename = entityinfo.getName();
+		if (etype != null) {
+			compound.setTag("type", new NBTString(etype.getName()));
+		}
+		if (euuid != null) {
+			compound.setTag("id", new NBTString(euuid.toString()));
+		}
+		if (ename != null) {
+			compound.setTag("name", new NBTString(ename));
+		}
+		this.value = MojangsonSerializer.serialize(compound);
 	}
 
 	public Type getType() {
@@ -77,24 +75,28 @@ public class HoverAction {
 
 	public ItemStack getItemStack() {
 		validateAction(type, Type.SHOW_ITEM);
-		return ServerPlatform.get().getMiscUtils().createItemStackFromNBTTag(ServerPlatform.get().getWrapperFactory().createNBTCompoundFromJson(value));
+		return ServerPlatform.get().getMiscUtils().deserializeItemStackFromNBTJson(value);
 	}
 
 	public EntityInfo getEntity() {
 		validateAction(type, Type.SHOW_ENTITY);
-		NBTTagCompoundWrapper compound = ServerPlatform.get().getWrapperFactory().createNBTCompoundFromJson(value);
-		return new EntityInfo(EntityType.fromName(compound.getString("type")), UUID.fromString(compound.getString("id")), compound.getString("name"));
-	}
-
-	@Deprecated
-	public Any<Achievement, Statistic> getAchievmentOrStat() {
-		validateAction(type, Type.SHOW_ACHIEVEMENT);
-		return new Any<>(null, null);
+		try {
+			NBTCompound compound = MojangsonParser.parse(value);
+			NBTString etype = compound.getTagOfType("type", NBTType.STRING);
+			NBTString euuid = compound.getTagOfType("id", NBTType.STRING);
+			return new EntityInfo(
+				etype != null ? EntityType.fromName(etype.getValue()) : null,
+				euuid != null ? UUID.fromString(euuid.getValue()) : null,
+				NBTString.getValueOrNull(compound.getTagOfType("name", NBTType.STRING))
+			);
+		} catch (IOException e) {
+			throw new RuntimeException("Unable to parse value", e);
+		}
 	}
 
 	static void validateAction(Type current, Type expected) {
 		if (current != expected) {
-			throw new IllegalStateException(current + " is not an "+expected);
+			throw new IllegalStateException(current + " is not an " + expected);
 		}
 	}
 
@@ -104,9 +106,7 @@ public class HoverAction {
 	}
 
 	public static enum Type {
-		SHOW_TEXT, SHOW_ITEM, SHOW_ENTITY,
-		SHOW_ACHIEVEMENT //no longer exist
-		;
+		SHOW_TEXT, SHOW_ITEM, SHOW_ENTITY;
 	}
 
 	public static class EntityInfo {

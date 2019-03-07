@@ -1,84 +1,90 @@
 package protocolsupport.protocol.packet.middleimpl.serverbound.play.v_pe;
 
 import io.netty.buffer.ByteBuf;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.ServerBoundMiddlePacket;
-import protocolsupport.protocol.packet.middle.serverbound.play.MiddlePositionLook;
+import protocolsupport.protocol.packet.middle.serverbound.play.MiddleMoveLook;
 import protocolsupport.protocol.packet.middle.serverbound.play.MiddleTeleportAccept;
-import protocolsupport.protocol.packet.middle.serverbound.play.MiddleUpdateSign;
 import protocolsupport.protocol.packet.middleimpl.ServerBoundPacketData;
-import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.VarNumberSerializer;
-import protocolsupport.protocol.utils.types.Position;
+import protocolsupport.protocol.storage.netcache.MovementCache;
+import protocolsupport.protocol.utils.networkentity.NetworkEntity;
+import protocolsupport.protocol.utils.networkentity.NetworkEntityType;
+import protocolsupport.utils.Utils;
 import protocolsupport.utils.recyclable.RecyclableArrayList;
 import protocolsupport.utils.recyclable.RecyclableCollection;
-import protocolsupport.zplatform.itemstack.NBTTagCompoundWrapper;
 
 public class PositionLook extends ServerBoundMiddlePacket {
+
+	public PositionLook(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	protected double x;
 	protected double y;
 	protected double z;
-	protected float yaw;
 	protected float pitch;
+	protected float yaw;
+	protected float headYaw;
+	protected byte mode;
 	protected boolean onGround;
 
 	@Override
 	public void readFromClientData(ByteBuf clientdata) {
 		VarNumberSerializer.readVarLong(clientdata); //entity id
-		x = MiscSerializer.readLFloat(clientdata);
-		y = MiscSerializer.readLFloat(clientdata) - 1.6200000047683716D;
-		z = MiscSerializer.readLFloat(clientdata);
-		pitch = MiscSerializer.readLFloat(clientdata);
-		yaw = MiscSerializer.readLFloat(clientdata);
-		MiscSerializer.readLFloat(clientdata); //head yaw
-		clientdata.readByte(); //mode
+		x = clientdata.readFloatLE();
+		y = clientdata.readFloatLE() - 1.6200000047683716D;
+		z = clientdata.readFloatLE();
+		pitch = clientdata.readFloatLE();
+		headYaw = clientdata.readFloatLE();
+		yaw = clientdata.readFloatLE();
+		mode = clientdata.readByte(); //mode
 		onGround = clientdata.readBoolean();
 		VarNumberSerializer.readVarLong(clientdata);
+		if (mode == 2) {
+			clientdata.readIntLE();
+			clientdata.readIntLE();
+		}
 	}
 
 	@Override
 	public RecyclableCollection<ServerBoundPacketData> toNative() {
 		RecyclableArrayList<ServerBoundPacketData> packets = RecyclableArrayList.create();
-		cache.updatePEPositionLeniency((y - cache.getClientY()) > 0);
-		int teleportId = cache.peekTeleportConfirmId();
+		MovementCache movecache = cache.getMovementCache();
+		NetworkEntity player = cache.getWatchedEntityCache().getSelfPlayer();
+		double yOffset = 0;
+		if (onGround) {
+			final double dX = x - movecache.getPEClientX();
+			final double dZ = z - movecache.getPEClientZ();
+			final double speed = Math.sqrt(dX * dX + dZ * dZ);
+			//TODO: figure out actual values here, should just be a normal line: offset = C1 * speed + C2
+			final double speedOffset = speed >= 0.25 ? 0.9 : 0.6;
+			yOffset = (y - movecache.getPEClientY()) > 0.01 ? speedOffset : 0;
+			movecache.updatePEPositionLeniency(y);
+		}
+		movecache.setPEClientPosition(x, y, z);
+		//PE doesn't send a movement confirm after position set, so we just confirm teleport straight away
+		int teleportId = movecache.teleportConfirm();
 		if (teleportId != -1) {
-			//PE sends AVERAGE positions (FFS Mojang) so sometimes the BoundingBox of the player will collide inadvertently.
-			//We fake the servers position in this instance and shrug and resent a rounded position of the player.
 			packets.add(MiddleTeleportAccept.create(teleportId));
-			cache.payTeleportConfirm();
-			double[] serverPos = cache.getTeleportLocation();
-			packets.add(MiddlePositionLook.create(serverPos[0], serverPos[1], serverPos[2], yaw, pitch, onGround));
-			cache.setLastClientPosition(x, y, z);
-			//TODO: Play around more with these numbers to perhaps make things even more smooth.
-			x = Math.floor(x * 8) / 8; y = Math.ceil((y + 0.3) * 8) / 8; z = Math.floor(z * 8) / 8;
-		} else {
-			cache.setLastClientPosition(x, y, z);
+			packets.add(MiddleMoveLook.create(movecache.getX(), movecache.getY(), movecache.getZ(), headYaw, pitch, onGround));
 		}
-
-		packets.add(MiddlePositionLook.create(x, y, z, yaw, pitch, onGround));
-
-
-		//TODO: (re)move this shit
-		if (cache.getSignTag() != null) {
-			NBTTagCompoundWrapper signTag = cache.getSignTag();
-			int x = signTag.getIntNumber("x");
-			int y = signTag.getIntNumber("y");
-			int z = signTag.getIntNumber("z");
-
-			String[] nbtLines = new String[4];
-			String[] lines = signTag.getString("Text").split("\n");
-			for (int i = 0; i < nbtLines.length; i++) {
-				if (lines.length > i) {
-					nbtLines[i] = lines[i];
-				} else {
-					nbtLines[i] = "";
-				}
+		//yaw fix for boats due to relative vs absolute
+		if (player.getDataCache().isRiding()) {
+			NetworkEntity vehicle = cache.getWatchedEntityCache().getWatchedEntity(player.getDataCache().getVehicleId());
+			if (vehicle.getType() == NetworkEntityType.BOAT) {
+				yaw = ((360f / 256f) * cache.getAttributesCache().getPELastVehicleYaw()) + yaw + 90;
 			}
-			packets.add(MiddleUpdateSign.create(new Position(x, y, z), nbtLines));
-			cache.setSignTag(null);
 		}
-
+		packets.add(MiddleMoveLook.create(x, y + yOffset, z, yaw, pitch, onGround));
+		if (cache.getPETileCache().shouldSignSign()) {
+			cache.getPETileCache().signSign(packets);
+		}
 		return packets;
 	}
 
+	@Override
+	public String toString() {
+		return Utils.toStringAllFields(this);
+	}
 }

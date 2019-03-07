@@ -13,7 +13,6 @@ import io.netty.handler.codec.DecoderException;
 import io.netty.util.concurrent.Future;
 import protocolsupport.ProtocolSupport;
 import protocolsupport.api.ProtocolSupportAPI;
-import protocolsupport.api.ProtocolType;
 import protocolsupport.api.ProtocolVersion;
 import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.pipeline.ChannelHandlers;
@@ -23,7 +22,9 @@ import protocolsupport.protocol.pipeline.common.VarIntFrameEncoder;
 import protocolsupport.protocol.serializer.MiscSerializer;
 import protocolsupport.protocol.serializer.StringSerializer;
 import protocolsupport.protocol.serializer.VarNumberSerializer;
-import protocolsupport.utils.Utils;
+import protocolsupport.protocol.typeremapper.pe.PEPacketIDs;
+import protocolsupport.protocol.utils.ProtocolVersionsHelper;
+import protocolsupport.utils.JavaSystemProperty;
 import protocolsupport.utils.netty.Decompressor;
 import protocolsupport.utils.netty.ReplayingDecoderBuffer;
 import protocolsupport.utils.netty.ReplayingDecoderBuffer.EOFSignal;
@@ -31,11 +32,14 @@ import protocolsupport.zplatform.PlatformUtils;
 import protocolsupport.zplatform.ServerPlatform;
 import protocolsupport.zplatform.impl.encapsulated.EncapsulatedProtocolInfo;
 import protocolsupport.zplatform.impl.encapsulated.EncapsulatedProtocolUtils;
+import protocolsupport.zplatform.impl.pe.PEProxyServerInfoHandler;
+import protocolsupportbuildprocessor.Preload;
 
+@Preload
 public class InitialPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
-	protected static final int ping152delay = Utils.getJavaPropertyValue("ping152delay", 100, Integer::parseInt);
-	protected static final int pingLegacyDelay = Utils.getJavaPropertyValue("pinglegacydelay", 200, Integer::parseInt);
+	protected static final int ping152delay = JavaSystemProperty.getValue("ping152delay", 100, Integer::parseInt);
+	protected static final int pingLegacyDelay = JavaSystemProperty.getValue("pinglegacydelay", 200, Integer::parseInt);
 
 	static {
 		ProtocolSupport.logInfo("Assume 1.5.2 ping delay: "+ping152delay);
@@ -44,7 +48,11 @@ public class InitialPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
 	protected static final EnumMap<ProtocolVersion, IPipeLineBuilder> pipelineBuilders = new EnumMap<>(ProtocolVersion.class);
 	static {
-		pipelineBuilders.put(ProtocolVersion.MINECRAFT_FUTURE, new protocolsupport.protocol.pipeline.version.v_future.PipeLineBuilder());
+		pipelineBuilders.put(ProtocolVersion.MINECRAFT_FUTURE, new protocolsupport.protocol.pipeline.version.v_f.PipeLineBuilder());
+		IPipeLineBuilder builder1131 = new protocolsupport.protocol.pipeline.version.v_1_13.PipeLineBuilder();
+		pipelineBuilders.put(ProtocolVersion.MINECRAFT_1_13_2, builder1131);
+		pipelineBuilders.put(ProtocolVersion.MINECRAFT_1_13_1, builder1131);
+		pipelineBuilders.put(ProtocolVersion.MINECRAFT_1_13, builder1131);
 		IPipeLineBuilder builder1122 = new protocolsupport.protocol.pipeline.version.v_1_12.r2.PipeLineBuilder();
 		pipelineBuilders.put(ProtocolVersion.MINECRAFT_1_12_2, builder1122);
 		pipelineBuilders.put(ProtocolVersion.MINECRAFT_1_12_1, builder1122);
@@ -70,10 +78,12 @@ public class InitialPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 		pipelineBuilders.put(ProtocolVersion.MINECRAFT_1_5_2, builder15);
 		pipelineBuilders.put(ProtocolVersion.MINECRAFT_1_5_1, builder15);
 		pipelineBuilders.put(ProtocolVersion.MINECRAFT_1_4_7, new protocolsupport.protocol.pipeline.version.v_1_4.PipeLineBuilder());
-		pipelineBuilders.put(ProtocolVersion.MINECRAFT_LEGACY, new protocolsupport.protocol.pipeline.version.v_legacy.PipeLineBuilder());
+		pipelineBuilders.put(ProtocolVersion.MINECRAFT_LEGACY, new protocolsupport.protocol.pipeline.version.v_l.PipeLineBuilder());
 		IPipeLineBuilder builderpe = new protocolsupport.protocol.pipeline.version.v_pe.PipeLineBuilder();
 		pipelineBuilders.put(ProtocolVersion.MINECRAFT_PE_FUTURE, builderpe);
-		pipelineBuilders.put(ProtocolVersion.MINECRAFT_PE, builderpe);
+		pipelineBuilders.put(ProtocolVersion.MINECRAFT_PE_1_10, builderpe);
+		pipelineBuilders.put(ProtocolVersion.MINECRAFT_PE_1_9, builderpe);
+		pipelineBuilders.put(ProtocolVersion.MINECRAFT_PE_1_8, builderpe);
 		pipelineBuilders.put(ProtocolVersion.MINECRAFT_PE_LEGACY, builderpe);
 	}
 
@@ -114,10 +124,10 @@ public class InitialPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 		decode(ctx);
 	}
 
-	private boolean firstread = true;
-	private EncapsulatedProtocolInfo encapsulatedinfo = null;
+	protected boolean firstread = true;
+	protected EncapsulatedProtocolInfo encapsulatedinfo = null;
 
-	private void decode(ChannelHandlerContext ctx) throws Exception {
+	protected void decode(ChannelHandlerContext ctx) throws Exception {
 		cancelTask();
 		if (firstread) {
 			int firstbyte = buffer.readUnsignedByte();
@@ -138,7 +148,7 @@ public class InitialPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 		}
 	}
 
-	private void decodeRaw(ChannelHandlerContext ctx) {
+	protected void decodeRaw(ChannelHandlerContext ctx) {
 		Channel channel = ctx.channel();
 		int firstbyte = buffer.readUnsignedByte();
 		switch (firstbyte) {
@@ -180,12 +190,12 @@ public class InitialPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 		}
 	}
 
-	private static ProtocolVersion attemptDecodeNewHandshake(ByteBuf bytebuf) {
+	protected static ProtocolVersion attemptDecodeNewHandshake(ByteBuf bytebuf) {
 		bytebuf.readerIndex(0);
 		return ProtocolUtils.readNewHandshake(bytebuf.readSlice(VarNumberSerializer.readVarInt(bytebuf)));
 	}
 
-	private void decodeEncapsulated(ChannelHandlerContext ctx) throws Exception {
+	protected void decodeEncapsulated(ChannelHandlerContext ctx) throws Exception {
 		Channel channel = ctx.channel();
 		ByteBuf firstpacketdata = buffer.readSlice(VarNumberSerializer.readVarInt(buffer));
 		if (encapsulatedinfo.hasCompression()) {
@@ -228,8 +238,12 @@ public class InitialPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 				setProtocol(channel, ProtocolUtils.readNewHandshake(firstpacketdata));
 				break;
 			}
-			case 0x01: { // pe handshake
+			case PEPacketIDs.LOGIN: {
 				setProtocol(channel, ProtocolUtils.readPEHandshake(firstpacketdata));
+				break;
+			}
+			case PEProxyServerInfoHandler.PACKET_ID: {
+				setProtocol(channel, ProtocolVersionsHelper.LATEST_PE);
 				break;
 			}
 			default: {
@@ -264,12 +278,12 @@ public class InitialPacketDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 		if (ServerPlatform.get().getMiscUtils().isDebugging()) {
 			ProtocolSupport.logInfo(MessageFormat.format("{0} connected with protocol version {1}", connection.getAddress(), version));
 		}
-		connection.getNetworkManagerWrapper().setPacketListener(ServerPlatform.get().getWrapperFactory().createHandshakeListener(connection.getNetworkManagerWrapper()));
+		connection.getNetworkManagerWrapper().setPacketListener(ServerPlatform.get().getMiscUtils().createHandshakeListener(connection.getNetworkManagerWrapper()));
 		if (!ProtocolSupportAPI.isProtocolVersionEnabled(version)) {
-			if (version.getProtocolType() == ProtocolType.PC) {
+			if (version.isPC()) {
 				version = version.isBeforeOrEq(ProtocolVersion.MINECRAFT_1_6_4) ? ProtocolVersion.MINECRAFT_LEGACY : ProtocolVersion.MINECRAFT_FUTURE;
-			} else if (version.getProtocolType() == ProtocolType.PE) {
-				version = version.isAfterOrEq(ProtocolVersion.MINECRAFT_PE) ? ProtocolVersion.MINECRAFT_PE_FUTURE : ProtocolVersion.MINECRAFT_PE_LEGACY;
+			} else if (version.isPE()) {
+				version = version.isAfterOrEq(ProtocolVersion.MINECRAFT_PE_1_8) ? ProtocolVersion.MINECRAFT_PE_FUTURE : ProtocolVersion.MINECRAFT_PE_LEGACY;
 			} else {
 				throw new IllegalArgumentException(MessageFormat.format("Unable to get legacy or future version for disabled protocol version {0}", version));
 			}

@@ -1,27 +1,37 @@
 package protocolsupport.protocol.packet.middleimpl.clientbound.play.v_pe;
 
-
 import protocolsupport.api.ProtocolVersion;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.middle.clientbound.play.MiddleBlockTileUpdate;
 import protocolsupport.protocol.packet.middleimpl.ClientBoundPacketData;
 import protocolsupport.protocol.serializer.ItemStackSerializer;
 import protocolsupport.protocol.serializer.PositionSerializer;
+import protocolsupport.protocol.typeremapper.tile.TileEntityRemapper;
 import protocolsupport.protocol.typeremapper.pe.PEPacketIDs;
-import protocolsupport.protocol.typeremapper.tileentity.TileNBTRemapper;
-import protocolsupport.utils.recyclable.RecyclableArrayList;
+import protocolsupport.protocol.utils.types.TileEntity;
 import protocolsupport.utils.recyclable.RecyclableCollection;
+import protocolsupport.utils.recyclable.RecyclableSingletonList;
 
 public class BlockTileUpdate extends MiddleBlockTileUpdate {
 
+	public BlockTileUpdate(ConnectionImpl connection) {
+		super(connection);
+	}
+
+	protected final TileEntityRemapper tileremapper = TileEntityRemapper.getRemapper(connection.getVersion());
+
 	@Override
 	public RecyclableCollection<ClientBoundPacketData> toData() {
-		RecyclableArrayList<ClientBoundPacketData> packets = RecyclableArrayList.create();
-		ProtocolVersion version = connection.getVersion();
-		ClientBoundPacketData serializer = ClientBoundPacketData.create(PEPacketIDs.TILE_DATA_UPDATE, version);
-		PositionSerializer.writePEPosition(serializer, position);
-		ItemStackSerializer.writeTag(serializer, true, version, TileNBTRemapper.remap(version, tag));
-		packets.add(serializer);
-		return packets;
+
+
+		return RecyclableSingletonList.create(create(connection.getVersion(), tileremapper.remap(tile, cache.getTileCache().getBlockData(position))));
+	}
+
+	public static ClientBoundPacketData create(ProtocolVersion version, TileEntity tile) {
+		ClientBoundPacketData serializer = ClientBoundPacketData.create(PEPacketIDs.TILE_DATA_UPDATE);
+		PositionSerializer.writePEPosition(serializer, tile.getPosition());
+		ItemStackSerializer.writeTag(serializer, true, version, tile.getNBT());
+		return serializer;
 	}
 
 }

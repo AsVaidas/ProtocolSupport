@@ -1,14 +1,19 @@
 package protocolsupport.protocol.packet.middle.clientbound.play;
 
 import io.netty.buffer.ByteBuf;
+import protocolsupport.protocol.ConnectionImpl;
 
 public abstract class MiddleEntityRelMoveLook extends MiddleEntity {
 
-	protected int relX;
-	protected int relY;
-	protected int relZ;
-	protected int yaw;
-	protected int pitch;
+	public MiddleEntityRelMoveLook(ConnectionImpl connection) {
+		super(connection);
+	}
+
+	protected short relX;
+	protected short relY;
+	protected short relZ;
+	protected byte yaw;
+	protected byte pitch;
 	protected boolean onGround;
 
 	@Override

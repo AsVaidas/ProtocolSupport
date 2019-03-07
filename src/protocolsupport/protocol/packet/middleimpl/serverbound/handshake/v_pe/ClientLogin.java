@@ -1,6 +1,7 @@
 package protocolsupport.protocol.packet.middleimpl.serverbound.handshake.v_pe;
 
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
@@ -21,11 +22,11 @@ import com.nimbusds.jose.crypto.factories.DefaultJWSVerifierFactory;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
-import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.DecoderException;
 import protocolsupport.api.ProtocolType;
 import protocolsupport.api.ProtocolVersion;
 import protocolsupport.api.utils.Any;
+import protocolsupport.protocol.ConnectionImpl;
 import protocolsupport.protocol.packet.ServerBoundPacket;
 import protocolsupport.protocol.packet.middle.ServerBoundMiddlePacket;
 import protocolsupport.protocol.packet.middleimpl.ServerBoundPacketData;
@@ -39,6 +40,10 @@ import protocolsupport.utils.recyclable.RecyclableArrayList;
 import protocolsupport.utils.recyclable.RecyclableCollection;
 
 public class ClientLogin extends ServerBoundMiddlePacket {
+
+	public ClientLogin(ConnectionImpl connection) {
+		super(connection);
+	}
 
 	public static final String XUID_METADATA_KEY = "___PS_PE_XUID";
 
@@ -65,27 +70,27 @@ public class ClientLogin extends ServerBoundMiddlePacket {
 	@Override
 	public void readFromClientData(ByteBuf clientdata) {
 		clientdata.readInt();
-		ByteBuf logindata = Unpooled.wrappedBuffer(ArraySerializer.readByteArray(clientdata, connection.getVersion()));
+		ByteBuf logindata = ArraySerializer.readVarIntByteArraySlice(clientdata);
 		try {
 			Any<Key, JsonObject> chaindata = extractChainData(Utils.GSON.fromJson(
-				new InputStreamReader(new ByteBufInputStream(logindata, logindata.readIntLE())),
+				new InputStreamReader(new ByteBufInputStream(logindata, logindata.readIntLE()), StandardCharsets.UTF_8),
 				new TypeToken<Map<String, List<String>>>() {}.getType()
 			));
 			username = JsonUtils.getString(chaindata.getObj2(), "displayName");
-			cache.setPEClientUUID(UUID.fromString(JsonUtils.getString(chaindata.getObj2(), "identity")));
+			cache.getAttributesCache().setPEClientUUID(UUID.fromString(JsonUtils.getString(chaindata.getObj2(), "identity")));
 			if (chaindata.getObj1() != null) {
 				connection.addMetadata(XUID_METADATA_KEY, JsonUtils.getString(chaindata.getObj2(), "XUID"));
 			}
-			JWSObject additionaldata = JWSObject.parse(new String(MiscSerializer.readBytes(logindata, logindata.readIntLE())));
+			JWSObject additionaldata = JWSObject.parse(new String(MiscSerializer.readBytes(logindata, logindata.readIntLE()), StandardCharsets.UTF_8));
 			Map<String, String> clientinfo = Utils.GSON.fromJson(additionaldata.getPayload().toString(), new TypeToken<Map<String, String>>() {}.getType());
 			String rserveraddress = clientinfo.get("ServerAddress");
 			if (rserveraddress == null) {
 				throw new DecoderException("ServerAddress is missing");
 			}
-			String[] rserveraddresssplit = rserveraddress.split("[:]");
-			host = rserveraddresssplit[0];
-			port = Integer.parseInt(rserveraddresssplit[1]);
-			cache.setLocale(clientinfo.get("LanguageCode"));
+			int lastIndexOf = rserveraddress.lastIndexOf(":");
+			host = rserveraddress.substring(0, lastIndexOf);
+			port = Integer.parseInt(rserveraddress.substring(lastIndexOf + 1, rserveraddress.length()));
+			cache.getAttributesCache().setLocale(clientinfo.get("LanguageCode"));
 		} catch (ParseException e) {
 			throw new DecoderException("Unable to parse jwt", e);
 		}
@@ -121,11 +126,13 @@ public class ClientLogin extends ServerBoundMiddlePacket {
 	}
 
 	private static final DefaultJWSVerifierFactory jwsverifierfactory = new DefaultJWSVerifierFactory();
+
 	private static boolean verify(JWSObject object, PublicKey key) throws JOSEException {
 		return object.verify(jwsverifierfactory.createJWSVerifier(object.getHeader(), key));
 	}
 
 	private static final KeyFactory keyfactory = getKeyFactory();
+
 	private static KeyFactory getKeyFactory() {
 		try {
 			return KeyFactory.getInstance("EC");
